@@ -1053,7 +1053,7 @@ function openSettings(){
     const isCustomExch = currentExch && !knownExchValues.includes(currentExch);
     const exchOptions = EXCHANGE_OPTIONS.map(o=>`<option value="${o.value}" ${(isCustomExch&&o.value==='custom')||(!isCustomExch&&o.value===currentExch)?'selected':''}>${o.label}</option>`).join('');
     return `
-    <div class="etf-config-row" style="grid-template-columns:80px 1fr 1fr 100px 44px 32px;margin-bottom:10px">
+    <div class="etf-config-row" style="grid-template-columns:80px 1fr 1fr 100px 44px 110px 32px;margin-bottom:10px">
       <div class="s-field"><label>Ticker</label><input type="text" id="s-t-${i}" value="${t}" maxlength="10" style="text-transform:uppercase"></div>
       <div class="s-field"><label>Full Name</label><input type="text" id="s-n-${i}" value="${cfg.etfNames[t]||''}" placeholder="e.g. S&P 500 UCITS"></div>
       <div class="s-field">
@@ -1068,6 +1068,7 @@ function openSettings(){
       </div>
       <div class="s-field"><label>Base Price (${cfg.currency})</label><input type="number" id="s-bp-${i}" value="${cfg.basePrices[t]||0}" step="0.01" min="0"></div>
       <div class="s-field"><label>Colour</label><input type="color" id="s-c-${i}" value="${cfg.colors[t]||'#c8f060'}"></div>
+      <div class="s-field"><label>Yahoo Symbol</label><input type="text" id="s-ysym-${i}" value="${cfg.fmpSymbols?.[t]||''}" placeholder="${t}.DE" style="text-transform:uppercase" title="Yahoo Finance symbol e.g. SPYL.DE, MEUD.AS, VJPA.AS"></div>
       <div class="s-field"><label>&nbsp;</label>
         <button onclick="removeSecurityRow(${i})" title="Remove this security"
           style="background:rgba(240,96,96,0.1);color:var(--warn);border:1px solid rgba(240,96,96,0.3);font-family:inherit;font-size:0.8rem;padding:6px;border-radius:4px;cursor:pointer;width:100%">✕</button>
@@ -1086,20 +1087,12 @@ function openSettings(){
   // Populate all price-mode dependent sections
   onPriceModeChange();
 
-  // FMP symbols
-  const fmpKeyEl = document.getElementById('s-fmp-key');
-  if(fmpKeyEl) fmpKeyEl.value = cfg.fmpApiKey || '';
-  const fmpSymRows = document.getElementById('fmpSymbolRows');
-  if(fmpSymRows) fmpSymRows.innerHTML = cfg.tickers.map((t,i)=>{
-    const exchSuffixes = {'XETRA (DE)':'.DE','Euronext Amsterdam (NL)':'.AS','Euronext Paris (FR)':'.PA','LSE (GB)':'.L','Borsa Italiana (IT)':'.MI','SIX (CH)':'.SW','Euronext Brussels (BE)':'.BR','Nasdaq Stockholm (SE)':'.ST','NYSE/Nasdaq (US)':''};
-    const exch = cfg.exchanges?.[t]||'';
-    const defaultSuffix = exchSuffixes[exch]||'.DE';
-    const val = cfg.fmpSymbols?.[t]||(t+defaultSuffix);
-    return `<div class="s-field">
-      <label>${t} FMP Symbol</label>
-      <input type="text" id="s-fmp-${i}" value="${val}" placeholder="${t}${defaultSuffix}" style="text-transform:uppercase">
-    </div>`;
-  }).join('');
+  // Yahoo symbols are now inline in each ETF config row (s-ysym-${i})
+  // Pre-fill them from cfg.fmpSymbols
+  cfg.tickers.forEach((t,i)=>{
+    const el = document.getElementById(`s-ysym-${i}`);
+    if(el) el.value = cfg.fmpSymbols?.[t] || '';
+  });
 
   // Manual prices
   document.getElementById('manualPriceInputs').innerHTML=cfg.tickers.map((t,i)=>`
@@ -1163,11 +1156,10 @@ function applySettings(){
   cfg.threshold=parseFloat(document.getElementById('s-threshold').value)||5;
   cfg.priceMode=document.getElementById('s-price-mode').value;
 
-  // Save FMP key + symbols
-  cfg.fmpApiKey = document.getElementById('s-fmp-key')?.value?.trim() || '';
+  // Save Yahoo symbols from the inline field in each ETF row
   const newFmpSymbols={};
   cfg.tickers.forEach((t,i)=>{
-    const raw = document.getElementById(`s-fmp-${i}`)?.value || t;
+    const raw = document.getElementById(`s-ysym-${i}`)?.value || t;
     newFmpSymbols[t] = raw.toUpperCase().trim();
   });
   cfg.fmpSymbols = newFmpSymbols;
@@ -1210,7 +1202,7 @@ function addSecurityRow(){
 
   const div = document.createElement('div');
   div.className = 'etf-config-row';
-  div.style.cssText = 'grid-template-columns:80px 1fr 1fr 100px 44px 32px;margin-bottom:10px';
+  div.style.cssText = 'grid-template-columns:80px 1fr 1fr 100px 44px 110px 32px;margin-bottom:10px';
   div.innerHTML = `
     <div class="s-field"><label>Ticker</label><input type="text" id="s-t-${newIdx}" value="${newTicker}" maxlength="10" style="text-transform:uppercase"></div>
     <div class="s-field"><label>Full Name</label><input type="text" id="s-n-${newIdx}" value="" placeholder="e.g. iShares MSCI World"></div>
@@ -1224,6 +1216,7 @@ function addSecurityRow(){
     </div>
     <div class="s-field"><label>Base Price (${cfg.currency})</label><input type="number" id="s-bp-${newIdx}" value="0" step="0.01" min="0"></div>
     <div class="s-field"><label>Colour</label><input type="color" id="s-c-${newIdx}" value="${color}"></div>
+    <div class="s-field"><label>Yahoo Symbol</label><input type="text" id="s-ysym-${newIdx}" value="" placeholder="e.g. IWDA.AS" style="text-transform:uppercase" title="Yahoo Finance symbol — find it at finance.yahoo.com"></div>
     <div class="s-field"><label>&nbsp;</label>
       <button onclick="removeSecurityRow(${newIdx})" title="Remove"
         style="background:rgba(240,96,96,0.1);color:var(--warn);border:1px solid rgba(240,96,96,0.3);font-family:inherit;font-size:0.8rem;padding:6px;border-radius:4px;cursor:pointer;width:100%">✕</button>
