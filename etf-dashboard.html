@@ -1127,9 +1127,11 @@ function updateTargetTotal(){
 }
 
 function applySettings(){
-  // Read tickers
+  // Read tickers from DOM rows (not cfg.tickers — catches newly added securities)
+  const rowCount = document.getElementById('etfConfigRows')?.children.length || cfg.tickers.length;
   const newTickers=[], newNames={}, newExchanges={}, newColors={}, newTargets={}, newBP={};
-  cfg.tickers.forEach((_,i)=>{
+  for(let i=0; i<rowCount; i++){
+    ((_,i)=>{
     const t=(document.getElementById(`s-t-${i}`)?.value||'').toUpperCase().trim();
     if(!t) return;
     newTickers.push(t);
@@ -1141,7 +1143,8 @@ function applySettings(){
     newColors[t]=document.getElementById(`s-c-${i}`)?.value||'#c8f060';
     newTargets[t]=parseFloat(document.getElementById(`s-tgt-${i}`)?.value||0);
     newBP[t]=parseFloat(document.getElementById(`s-bp-${i}`)?.value||10);
-  });
+    })(null, i);
+  }
 
   const sum=Object.values(newTargets).reduce((a,b)=>a+b,0);
   if(Math.abs(sum-100)>0.1){ alert(`Targets must add up to 100%. Currently: ${sum.toFixed(1)}%`); return; }
