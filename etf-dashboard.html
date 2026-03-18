@@ -1,0 +1,1248 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ETF Portfolio Tracker</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=DM+Mono:wght@300;400;500&family=Instrument+Serif:ital@0;1&display=swap');
+
+  :root {
+    --bg: #0a0c0f; --surface: #111318; --surface2: #1a1d24;
+    --border: #252830; --accent: #c8f060; --text: #e8eaf0;
+    --muted: #6b7280; --warn: #f06060; --ok: #60f0a8;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { background: var(--bg); color: var(--text); font-family: 'DM Mono', monospace; min-height: 100vh; padding: 24px; }
+
+  header { display: flex; justify-content: space-between; align-items: flex-end; margin-bottom: 32px; border-bottom: 1px solid var(--border); padding-bottom: 20px; }
+  .header-left h1 { font-family: 'Instrument Serif', serif; font-size: 2rem; font-weight: 400; letter-spacing: -0.02em; }
+  .header-left p { font-size: 0.7rem; color: var(--muted); margin-top: 4px; letter-spacing: 0.1em; text-transform: uppercase; }
+  .header-right { display: flex; align-items: flex-end; gap: 20px; }
+  .total-value { text-align: right; }
+  .total-value .label { font-size: 0.65rem; color: var(--muted); text-transform: uppercase; letter-spacing: 0.1em; }
+  .total-value .amount { font-family: 'Instrument Serif', serif; font-size: 2.2rem; color: var(--accent); }
+  .total-value .change { font-size: 0.7rem; margin-top: 2px; }
+
+  .grid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 16px; margin-bottom: 20px; }
+  .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 20px; }
+  .grid-wide { display: grid; grid-template-columns: 2fr 1fr; gap: 16px; margin-bottom: 20px; }
+
+  .card { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 20px; }
+  .card-title { font-size: 0.65rem; text-transform: uppercase; letter-spacing: 0.12em; color: var(--muted); margin-bottom: 16px; }
+
+  .etf-card { border-left: 3px solid; }
+  .etf-ticker { font-size: 1.1rem; font-weight: 500; margin-bottom: 4px; }
+  .etf-name { font-size: 0.65rem; color: var(--muted); margin-bottom: 12px; }
+  .etf-price { font-family: 'Instrument Serif', serif; font-size: 1.6rem; }
+  .etf-meta { display: flex; justify-content: space-between; margin-top: 10px; font-size: 0.65rem; color: var(--muted); }
+  .etf-value { margin-top: 8px; font-size: 0.8rem; }
+  .etf-value span { color: var(--muted); }
+
+  .drift-label { display: flex; justify-content: space-between; font-size: 0.65rem; color: var(--muted); margin-bottom: 4px; }
+  .drift-bar-bg { height: 6px; background: var(--surface2); border-radius: 3px; position: relative; overflow: visible; }
+  .drift-bar-fill { height: 100%; border-radius: 3px; transition: width 0.5s ease; }
+  .drift-target { position: absolute; top: -3px; width: 2px; height: 12px; background: white; opacity: 0.4; border-radius: 1px; }
+
+  .alert-badge { display: inline-block; padding: 3px 8px; border-radius: 4px; font-size: 0.6rem; text-transform: uppercase; letter-spacing: 0.1em; font-weight: 500; }
+  .alert-ok { background: rgba(96,240,168,0.15); color: var(--ok); border: 1px solid rgba(96,240,168,0.3); }
+  .alert-warn { background: rgba(240,96,96,0.15); color: var(--warn); border: 1px solid rgba(240,96,96,0.3); animation: pulse 2s infinite; }
+  @keyframes pulse { 0%,100%{opacity:1}50%{opacity:.6} }
+
+  .rebalance-status { display: flex; align-items: center; gap: 12px; padding: 16px; border-radius: 6px; margin-bottom: 16px; }
+  .rebalance-status.ok { background: rgba(96,240,168,0.05); border: 1px solid rgba(96,240,168,0.2); }
+  .rebalance-status.warn { background: rgba(240,96,96,0.05); border: 1px solid rgba(240,96,96,0.2); }
+  .rebalance-status .icon { font-size: 1.4rem; }
+  .rebalance-status .msg { font-size: 0.75rem; }
+  .rebalance-status .msg strong { display: block; margin-bottom: 2px; }
+
+  table { width: 100%; border-collapse: collapse; font-size: 0.72rem; }
+  th { text-align: left; color: var(--muted); font-size: 0.6rem; text-transform: uppercase; letter-spacing: 0.1em; padding: 0 8px 10px 0; font-weight: 400; }
+  td { padding: 9px 8px 9px 0; border-top: 1px solid var(--border); }
+  tr:last-child td { border-bottom: 1px solid var(--border); }
+  .positive { color: var(--ok); }
+  .negative { color: var(--warn); }
+  .ticker-dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 6px; }
+
+  .form-row { display: grid; grid-template-columns: repeat(6,1fr) auto; gap: 8px; align-items: end; margin-top: 12px; }
+  label { font-size: 0.6rem; color: var(--muted); text-transform: uppercase; letter-spacing: 0.08em; display: block; margin-bottom: 4px; }
+  select, input {
+    background: var(--surface2); border: 1px solid var(--border); color: var(--text);
+    font-family: 'DM Mono', monospace; font-size: 0.75rem; padding: 8px 10px;
+    border-radius: 4px; width: 100%; outline: none; transition: border-color 0.2s;
+  }
+  select:focus, input:focus { border-color: var(--accent); }
+  input[type="color"] { padding: 2px; height: 36px; cursor: pointer; }
+
+  button {
+    background: var(--accent); color: #0a0c0f; border: none;
+    font-family: 'DM Mono', monospace; font-size: 0.7rem; font-weight: 500;
+    padding: 8px 14px; border-radius: 4px; cursor: pointer;
+    text-transform: uppercase; letter-spacing: 0.08em; transition: opacity 0.2s; white-space: nowrap;
+  }
+  button:hover { opacity: 0.85; }
+  .btn-secondary { background: var(--surface2); color: var(--muted); border: 1px solid var(--border); }
+  .btn-danger { background: rgba(240,96,96,0.1); color: var(--warn); border: 1px solid rgba(240,96,96,0.3); }
+
+  canvas { max-height: 220px; }
+  .chart-legend { display: flex; gap: 16px; margin-top: 12px; flex-wrap: wrap; }
+  .chart-legend-item { display: flex; align-items: center; gap: 6px; font-size: 0.65rem; color: var(--muted); }
+  .legend-dot { width: 8px; height: 8px; border-radius: 50%; }
+
+  .summary-row { display: flex; justify-content: space-between; padding: 8px 0; border-bottom: 1px solid var(--border); font-size: 0.72rem; }
+  .summary-row:last-child { border-bottom: none; }
+  .summary-row .key { color: var(--muted); }
+
+  .tabs { display: flex; gap: 2px; margin-bottom: 16px; }
+  .tab { padding: 6px 14px; font-size: 0.65rem; text-transform: uppercase; letter-spacing: 0.1em; border-radius: 4px; cursor: pointer; color: var(--muted); background: transparent; border: 1px solid transparent; }
+  .tab.active { background: var(--surface2); color: var(--text); border-color: var(--border); }
+
+  .section-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; }
+  .section-header h2 { font-family: 'Instrument Serif', serif; font-size: 1.1rem; font-weight: 400; }
+  .empty-state { text-align: center; padding: 30px; color: var(--muted); font-size: 0.75rem; }
+
+  /* Settings */
+  .settings-btn { background: var(--surface2); color: var(--muted); border: 1px solid var(--border); font-family: 'DM Mono',monospace; font-size: 0.7rem; padding: 8px 14px; border-radius: 4px; cursor: pointer; letter-spacing: 0.08em; transition: all 0.2s; }
+  .settings-btn:hover { border-color: var(--accent); color: var(--accent); }
+
+  .overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.75); z-index: 200; align-items: center; justify-content: center; }
+  .overlay.open { display: flex; }
+
+  .settings-panel {
+    background: var(--surface); border: 1px solid var(--border); border-radius: 12px;
+    width: 600px; max-width: 96vw; max-height: 92vh; overflow-y: auto;
+    padding: 28px; animation: pop 0.18s ease;
+  }
+  @keyframes pop { from{transform:scale(0.97) translateY(-8px);opacity:0} to{transform:scale(1) translateY(0);opacity:1} }
+
+  .settings-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 24px; }
+  .settings-header h2 { font-family: 'Instrument Serif', serif; font-size: 1.5rem; font-weight: 400; }
+  .close-btn { background: none; border: none; color: var(--muted); font-size: 1.3rem; cursor: pointer; padding: 4px 8px; border-radius: 4px; }
+  .close-btn:hover { background: var(--surface2); color: var(--text); }
+
+  .s-section { margin-bottom: 24px; }
+  .s-section-title { font-size: 0.6rem; text-transform: uppercase; letter-spacing: 0.15em; color: var(--muted); margin-bottom: 12px; padding-bottom: 8px; border-bottom: 1px solid var(--border); }
+
+  .s-row-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 10px; }
+  .s-row-3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 12px; margin-bottom: 10px; }
+  .s-field { display: flex; flex-direction: column; gap: 4px; }
+  .s-field label { font-size: 0.6rem; color: var(--muted); text-transform: uppercase; letter-spacing: 0.08em; }
+
+  .etf-config-row { display: grid; grid-template-columns: 80px 1fr 100px 44px; gap: 10px; align-items: end; margin-bottom: 10px; padding: 12px; background: var(--surface2); border-radius: 6px; border: 1px solid var(--border); }
+
+  .target-total { font-size: 0.7rem; padding: 8px 12px; border-radius: 6px; margin-top: 4px; }
+  .target-total.ok { background: rgba(96,240,168,0.1); color: var(--ok); }
+  .target-total.warn { background: rgba(240,96,96,0.1); color: var(--warn); }
+
+  .settings-footer { display: flex; gap: 10px; justify-content: flex-end; margin-top: 24px; padding-top: 16px; border-top: 1px solid var(--border); }
+
+
+  /* ── Responsive: Tablet (max 900px) ── */
+  @media (max-width: 900px) {
+    body { padding: 16px; }
+    .grid { grid-template-columns: 1fr 1fr; }
+    .grid-2,.grid-wide { grid-template-columns: 1fr; }
+    .form-row { grid-template-columns: 1fr 1fr; }
+    .s-row-2,.s-row-3 { grid-template-columns: 1fr 1fr; }
+    .etf-config-row { grid-template-columns: 1fr 1fr; }
+    .header-left h1 { font-size: 1.5rem; }
+    .total-value .amount { font-size: 1.8rem; }
+  }
+
+  /* ── Responsive: Mobile (max 600px) ── */
+  @media (max-width: 600px) {
+    body { padding: 12px 12px 80px; } /* bottom padding for nav bar */
+
+    /* Header */
+    header {
+      flex-direction: column;
+      align-items: flex-start;
+      gap: 12px;
+      margin-bottom: 20px;
+      padding-bottom: 16px;
+    }
+    .header-right {
+      width: 100%;
+      justify-content: space-between;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 8px;
+    }
+    .header-left h1 { font-size: 1.3rem; }
+    .header-left p { font-size: 0.6rem; }
+    .total-value { text-align: left; }
+    .total-value .amount { font-size: 1.9rem; }
+    .total-value .label { font-size: 0.6rem; }
+
+    /* Price status pill — smaller on mobile */
+    #priceStatusPill { font-size: 0.6rem; padding: 4px 8px; }
+
+    /* Settings + Refresh buttons — icon only on very small screens */
+    .settings-btn { font-size: 0.65rem; padding: 7px 10px; }
+
+    /* ETF cards — single column, slightly more compact */
+    .grid { grid-template-columns: 1fr; gap: 10px; }
+    .grid-2 { grid-template-columns: 1fr; gap: 10px; }
+    .grid-wide { grid-template-columns: 1fr; gap: 10px; }
+    .card { padding: 14px; }
+
+    /* ETF card content */
+    .etf-ticker { font-size: 1rem; }
+    .etf-price { font-size: 1.4rem; }
+    .etf-value { font-size: 0.75rem; }
+
+    /* Charts */
+    canvas { max-height: 180px; }
+    .tabs { flex-wrap: wrap; }
+    .tab { font-size: 0.6rem; padding: 5px 10px; }
+
+    /* Rebalance status — stack on mobile */
+    .rebalance-status { flex-wrap: wrap; gap: 8px; padding: 12px; }
+    .rebalance-status .icon { font-size: 1.2rem; }
+    .rebalance-status .msg { font-size: 0.7rem; }
+
+    /* Tables — horizontally scrollable */
+    .table-scroll { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+    table { font-size: 0.65rem; min-width: 480px; }
+    th { font-size: 0.55rem; padding-bottom: 8px; }
+    td { padding: 7px 6px 7px 0; }
+
+    /* Transaction form — 2-col grid */
+    .form-row {
+      grid-template-columns: 1fr 1fr;
+      gap: 8px;
+    }
+    .form-row > div:last-child { grid-column: 1 / -1; }
+    .form-row button { width: 100%; padding: 10px; font-size: 0.75rem; }
+
+    /* Settings panel — full screen on mobile */
+    .settings-panel {
+      width: 100vw;
+      max-width: 100vw;
+      max-height: 100vh;
+      height: 100vh;
+      border-radius: 0;
+      padding: 20px 16px;
+    }
+    .s-row-2,.s-row-3 { grid-template-columns: 1fr; }
+    .etf-config-row { grid-template-columns: 1fr 1fr; gap: 8px; padding: 10px; }
+    .settings-footer { position: sticky; bottom: 0; background: var(--surface); padding: 12px 0 0; }
+
+    /* Tax summary */
+    .summary-row { font-size: 0.68rem; }
+
+    /* Section headers */
+    .section-header h2 { font-size: 1rem; }
+    .card-title { font-size: 0.6rem; margin-bottom: 12px; }
+
+    /* File banner */
+    #fileBanner { font-size: 0.65rem; padding: 10px 14px; }
+    #fileBanner code { font-size: 0.7em; display: block; margin: 4px 0; }
+  }
+
+  /* ── Bottom nav (mobile only) ── */
+  #mobileNav {
+    display: none;
+    position: fixed;
+    bottom: 0; left: 0; right: 0;
+    background: var(--surface);
+    border-top: 1px solid var(--border);
+    z-index: 100;
+    padding: 0;
+  }
+  #mobileNav .nav-items {
+    display: flex;
+    justify-content: space-around;
+  }
+  #mobileNav .nav-item {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 10px 4px 12px;
+    font-size: 0.55rem;
+    color: var(--muted);
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    cursor: pointer;
+    gap: 4px;
+    border: none;
+    background: none;
+    font-family: "DM Mono", monospace;
+    -webkit-tap-highlight-color: transparent;
+    transition: color 0.15s;
+  }
+  #mobileNav .nav-item .nav-icon { font-size: 1.2rem; }
+  #mobileNav .nav-item.active { color: var(--accent); }
+
+  /* Section visibility for mobile nav */
+  .mobile-section { }
+  @media (max-width: 600px) {
+    #mobileNav { display: block; }
+    .mobile-section { display: none; }
+    .mobile-section.active { display: block; }
+  }
+</style>
+</head>
+<body>
+
+<div id="fileBanner" style="display:none;background:#2b1a00;border-bottom:2px solid #f0a860;padding:11px 24px;font-size:0.72rem;color:#f0c878;align-items:center;gap:12px;flex-wrap:wrap">
+  <span style="font-size:1rem">⚠️</span>
+  <strong>Prices won't load when opened as a local file.</strong>
+  Browsers block network requests from <code style="background:rgba(0,0,0,0.3);padding:2px 6px;border-radius:3px">file://</code> — you need to serve it over HTTP.<br>
+  <span style="margin-top:6px;display:block">
+    <strong style="color:#f0c060">Quick fix:</strong> Open a terminal in the same folder and run:
+    <code style="background:rgba(0,0,0,0.3);padding:3px 8px;border-radius:4px;font-family:monospace;margin:0 6px">python3 -m http.server 8080</code>
+    then visit
+    <code style="background:rgba(0,0,0,0.3);padding:3px 8px;border-radius:4px;font-family:monospace;margin:0 6px">http://localhost:8080/etf-dashboard.html</code>
+    in your browser.
+    <button onclick="document.getElementById('fileBanner').style.display='none'" style="float:right;background:transparent;border:1px solid #f0a860;color:#f0a860;font-size:0.65rem;padding:4px 10px;border-radius:4px;cursor:pointer;font-family:'DM Mono',monospace">Dismiss</button>
+  </span>
+</div>
+
+<!-- Settings Overlay -->
+<div class="overlay" id="overlay" onclick="if(event.target===this)closeSettings()">
+  <div class="settings-panel">
+    <div class="settings-header">
+      <h2>⚙ Settings</h2>
+      <button class="close-btn" onclick="closeSettings()">✕</button>
+    </div>
+
+    <div class="s-section">
+      <div class="s-section-title">Display</div>
+      <div class="s-row-2">
+        <div class="s-field">
+          <label>Currency</label>
+          <select id="s-currency" onchange="toggleCustomCurrency()">
+            <option value="€">€ Euro</option>
+            <option value="£">£ GBP</option>
+            <option value="$">$ USD</option>
+            <option value="¥">¥ JPY / CNY</option>
+            <option value="CHF">CHF Swiss Franc</option>
+            <option value="kr">kr SEK / DKK / NOK</option>
+            <option value="A$">A$ AUD</option>
+            <option value="C$">C$ CAD</option>
+            <option value="custom">Custom…</option>
+          </select>
+        </div>
+        <div class="s-field" id="customCurrencyWrap" style="display:none">
+          <label>Custom Symbol</label>
+          <input type="text" id="s-custom-currency" maxlength="6" placeholder="e.g. AUD">
+        </div>
+        <div class="s-field">
+          <label>Portfolio Name</label>
+          <input type="text" id="s-portfolio-name" maxlength="40" placeholder="My ETF Portfolio">
+        </div>
+      </div>
+    </div>
+
+    <div class="s-section">
+      <div class="s-section-title">ETFs — Ticker, Name & Colour</div>
+      <div id="etfConfigRows"></div>
+    </div>
+
+    <div class="s-section">
+      <div class="s-section-title">Target Allocations</div>
+      <div class="s-row-3" id="targetInputs"></div>
+      <div class="target-total warn" id="targetTotal">Total: 0%</div>
+    </div>
+
+    <div class="s-section">
+      <div class="s-section-title">Price Source & Rebalance</div>
+      <div class="s-row-2">
+        <div class="s-field">
+          <label>Price Source</label>
+          <select id="s-price-mode" onchange="onPriceModeChange()">
+            <option value="manual">Manual — I enter prices</option>
+            <option value="fmp">Financial Modeling Prep (free API key)</option>
+            <option value="demo">Demo (simulated)</option>
+          </select>
+        </div>
+        <div class="s-field">
+          <label>Rebalance Alert Threshold (%)</label>
+          <input type="number" id="s-threshold" min="1" max="25" step="0.5" placeholder="5">
+        </div>
+      </div>
+    </div>
+
+    <!-- FMP section -->
+    <div class="s-section" id="fmpSection" style="display:none">
+      <div class="s-section-title">🔑 Financial Modeling Prep — Free API</div>
+      <div class="s-field" style="margin-bottom:12px">
+        <label>API Key</label>
+        <input type="text" id="s-fmp-key" placeholder="Paste your free FMP API key here" autocomplete="off" style="font-family:monospace">
+      </div>
+      <div class="s-row-3" id="fmpSymbolRows"></div>
+      <div style="margin-top:10px;padding:12px;background:var(--surface2);border-radius:6px;font-size:0.65rem;color:var(--muted);line-height:1.9">
+        <strong style="color:var(--accent)">Free tier: 250 requests/day — more than enough for 3 ETFs.</strong><br>
+        Sign up at <strong style="color:var(--accent)">financialmodelingprep.com/register</strong> — no credit card needed.<br>
+        Covers European exchanges. Symbol format examples:<br>
+        <span style="color:var(--accent)">SPYL.DE</span> = XETRA &nbsp;·&nbsp;
+        <span style="color:var(--accent)">MEUD.AS</span> = Euronext Amsterdam &nbsp;·&nbsp;
+        <span style="color:var(--accent)">VJPA.AS</span> = Euronext Amsterdam<br>
+        <span style="color:var(--accent)">SPYL.L</span> = LSE &nbsp;·&nbsp;
+        <span style="color:var(--accent)">SPYL.PA</span> = Euronext Paris<br>
+        Prices refresh every 60 seconds automatically.
+      </div>
+      <div id="fmpTestResult" style="margin-top:8px;font-size:0.65rem;padding:8px 10px;border-radius:5px;display:none"></div>
+      <div style="margin-top:10px;display:flex;gap:8px;align-items:center">
+        <button class="btn-secondary" style="font-size:0.65rem;padding:6px 12px" onclick="testFMP()">🔍 Test API Key & Symbols</button>
+        <span style="font-size:0.6rem;color:var(--muted)">Verifies key and fetches live prices for all symbols</span>
+      </div>
+    </div>
+
+<!-- Manual section -->
+    <div class="s-section" id="manualPricesSection" style="display:none">
+      <div class="s-section-title">Current Prices (manual)</div>
+      <div class="s-row-3" id="manualPriceInputs"></div>
+      <p style="font-size:0.65rem;color:var(--muted);margin-top:6px;">Update these whenever you want to refresh valuations.</p>
+    </div>
+
+    <div class="s-section">
+      <div class="s-section-title">Base / Fallback Prices</div>
+      <div class="s-row-3" id="basePriceInputs"></div>
+      <p style="font-size:0.65rem;color:var(--muted);margin-top:6px;">Used for the demo simulation and as fallback if live prices fail.</p>
+    </div>
+
+    <div class="s-section">
+      <div class="s-section-title">Data Management</div>
+      <button class="btn-danger" onclick="clearAllData()">🗑 Clear All Transactions</button>
+      <p style="font-size:0.65rem;color:var(--muted);margin-top:8px;">Permanently deletes all transaction history from this browser.</p>
+    </div>
+
+    <div class="settings-footer">
+      <button class="btn-secondary" onclick="closeSettings()">Cancel</button>
+      <button onclick="applySettings()">Save & Apply</button>
+    </div>
+  </div>
+</div>
+
+<!-- Header -->
+<header>
+  <div class="header-left">
+    <h1 id="portfolioTitle">Portfolio Tracker</h1>
+    <p id="portfolioSubtitle">Loading…</p>
+  </div>
+  <div class="header-right">
+    <div id="priceStatusPill" style="font-size:0.65rem;padding:5px 10px;border-radius:4px;border:1px solid var(--border);background:var(--surface2);color:var(--muted);display:flex;align-items:center;gap:6px">
+      <span id="priceStatusDot" style="width:7px;height:7px;border-radius:50%;background:var(--muted);display:inline-block"></span>
+      <span id="priceStatusText">Prices: Demo</span>
+    </div>
+    <button class="settings-btn" onclick="tickPrices()" id="refreshBtn" title="Refresh prices now">↻ Refresh</button>
+    <button class="settings-btn" onclick="openSettings()">⚙ Settings</button>
+    <div class="total-value">
+      <div class="label">Total Value</div>
+      <div class="amount" id="totalValue">—</div>
+      <div class="change" id="totalChange">—</div>
+    </div>
+  </div>
+</header>
+
+<div class="mobile-section active" id="sec-overview">
+<div class="grid" id="etfCards"></div>
+
+</div><!-- end sec-overview -->
+
+<div class="mobile-section active" id="sec-allocation">
+<div class="grid-wide">
+  <div class="card">
+    <div class="card-title">Allocation vs Target</div>
+    <div id="rebalanceAlert"></div>
+    <div id="driftBars"></div>
+  </div>
+  <div class="card">
+    <div class="card-title">Current Allocation</div>
+    <canvas id="pieChart"></canvas>
+  </div>
+</div>
+
+</div><!-- end sec-allocation -->
+
+<div class="mobile-section active" id="sec-chart">
+<div class="card" style="margin-bottom:20px">
+  <div class="section-header">
+    <div class="card-title" style="margin:0">Portfolio Value Over Time</div>
+    <div class="tabs">
+      <div class="tab active" onclick="switchChart('value',this)">Value</div>
+      <div class="tab" onclick="switchChart('allocation',this)">Allocation %</div>
+      <div class="tab" onclick="switchChart('growth',this)">% Growth</div>
+    </div>
+  </div>
+  <canvas id="lineChart"></canvas>
+  <div class="chart-legend" id="chartLegend"></div>
+</div>
+
+</div><!-- end chart card -->
+</div><!-- end sec-chart -->
+
+<div class="mobile-section active" id="sec-transactions">
+<div class="grid-2">
+  <div class="card">
+    <div class="section-header">
+      <h2>Transaction Log</h2>
+      <button class="btn-secondary" onclick="toggleForm()">+ Add</button>
+    </div>
+    <div id="addForm" style="display:none;margin-bottom:16px;padding:14px;background:var(--surface2);border-radius:6px;border:1px solid var(--border)">
+      <div class="form-row">
+        <div><label>Date</label><input type="date" id="txDate"></div>
+        <div><label>Ticker</label><select id="txTicker"></select></div>
+        <div><label>Type</label><select id="txType"><option value="buy">Buy</option><option value="sell">Sell</option></select></div>
+        <div><label>Shares</label><input type="number" id="txShares" placeholder="0" step="0.001"></div>
+        <div><label>Price</label><input type="number" id="txPrice" placeholder="0.00" step="0.01"></div>
+        <div><label>Fee (optional)</label><input type="number" id="txFee" placeholder="0.00" step="0.01" min="0"></div>
+        <div><label>&nbsp;</label><button onclick="addTransaction()">Add</button></div>
+      </div>
+    </div>
+    <div class="table-scroll"><div id="txTable"><div class="empty-state">No transactions yet.</div></div></div>
+  </div>
+
+  <div class="card">
+    <div class="section-header"><h2>Tax & Gain / Loss</h2></div>
+    <div>
+      <div class="summary-row"><span class="key">Total Invested</span><span id="taxInvested">—</span></div>
+      <div class="summary-row"><span class="key">Current Value</span><span id="taxValue">—</span></div>
+      <div class="summary-row"><span class="key">Unrealised G/L</span><span id="taxUnrealised">—</span></div>
+      <div class="summary-row"><span class="key">Unrealised G/L %</span><span id="taxUnrealisedPct">—</span></div>
+      <div class="summary-row"><span class="key">Realised G/L</span><span id="taxRealised">—</span></div>
+      <div class="summary-row"><span class="key">Total Fees Paid</span><span id="taxFees">—</span></div>
+    </div>
+    <div style="margin-top:20px">
+      <div class="card-title">Per ETF Breakdown</div>
+      <div id="taxBreakdown"></div>
+    </div>
+    <div style="margin-top:16px;padding:12px;background:var(--surface2);border-radius:6px;font-size:0.65rem;color:var(--muted);line-height:1.7">
+      ⚠️ FIFO cost basis. Consult a tax advisor for your jurisdiction's rules.
+    </div>
+  </div>
+</div>
+</div><!-- end sec-transactions -->
+
+<script>
+// ── Defaults ──────────────────────────────────────────────────────────────────
+const DEFAULTS = {
+  currency: '€',
+  portfolioName: 'Portfolio Tracker',
+  tickers: ['SPYL','MEUD','VJPA'],
+  etfNames: { SPYL:'S&P 500 UCITS', MEUD:'STOXX Europe 600', VJPA:'FTSE Japan' },
+  exchanges: { SPYL:'XETRA (DE)', MEUD:'Euronext Amsterdam (NL)', VJPA:'Euronext Amsterdam (NL)' },
+  colors: { SPYL:'#c8f060', MEUD:'#60c8f0', VJPA:'#f0a860' },
+  targets: { SPYL:60, MEUD:30, VJPA:10 },
+  threshold: 5,
+  priceMode: 'manual',
+  basePrices: { SPYL:61.45, MEUD:40.12, VJPA:27.30 },
+  manualPrices: { SPYL:61.45, MEUD:40.12, VJPA:27.30 },
+  fmpApiKey: '',
+  fmpSymbols: { SPYL:'SPYL.DE', MEUD:'MEUD.AS', VJPA:'VJPA.AS' },
+};
+
+// Known exchange listings for SPYL, MEUD, VJPA (and common ETFs)
+const EXCHANGE_OPTIONS = [
+  { label:'XETRA (DE) — Frankfurt',         value:'XETRA (DE)' },
+  { label:'Euronext Amsterdam (NL)',         value:'Euronext Amsterdam (NL)' },
+  { label:'Euronext Paris (FR)',             value:'Euronext Paris (FR)' },
+  { label:'London Stock Exchange (GB)',      value:'LSE (GB)' },
+  { label:'Borsa Italiana (IT)',             value:'Borsa Italiana (IT)' },
+  { label:'SIX Swiss Exchange (CH)',         value:'SIX (CH)' },
+  { label:'Euronext Brussels (BE)',          value:'Euronext Brussels (BE)' },
+  { label:'Nasdaq Stockholm (SE)',           value:'Nasdaq Stockholm (SE)' },
+  { label:'Oslo Børs (NO)',                  value:'Oslo Børs (NO)' },
+  { label:'NYSE / Nasdaq (US)',              value:'NYSE/Nasdaq (US)' },
+  { label:'Tokyo Stock Exchange (JP)',       value:'TSE (JP)' },
+  { label:'Hong Kong Stock Exchange (HK)',   value:'HKEX (HK)' },
+  { label:'Custom / Other',                 value:'custom' },
+];
+
+// ── State ─────────────────────────────────────────────────────────────────────
+let cfg = JSON.parse(localStorage.getItem('etf_cfg') || 'null') || JSON.parse(JSON.stringify(DEFAULTS));
+let prices = { ...cfg.manualPrices };
+let transactions = JSON.parse(localStorage.getItem('etf_txs') || '[]');
+let chartMode = 'value';
+let lineChart, pieChart;
+
+const saveCfg = () => localStorage.setItem('etf_cfg', JSON.stringify(cfg));
+const saveTx  = () => localStorage.setItem('etf_txs', JSON.stringify(transactions));
+const fmt     = v => cfg.currency + Math.abs(v).toFixed(2);
+const fmtSigned = v => (v>=0?'+':'-') + fmt(v);
+
+// ── Seed demo data ────────────────────────────────────────────────────────────
+if (!transactions.length) {
+  const ago = mo => { const d=new Date(); d.setMonth(d.getMonth()-mo); return d.toISOString().split('T')[0]; };
+  transactions = [
+    {date:ago(12),ticker:'SPYL',type:'buy',shares:10,price:48.20},
+    {date:ago(12),ticker:'MEUD',type:'buy',shares:8, price:32.10},
+    {date:ago(12),ticker:'VJPA',type:'buy',shares:5, price:22.40},
+    {date:ago(9), ticker:'SPYL',type:'buy',shares:5, price:51.30},
+    {date:ago(9), ticker:'MEUD',type:'buy',shares:4, price:34.60},
+    {date:ago(6), ticker:'SPYL',type:'buy',shares:8, price:55.70},
+    {date:ago(6), ticker:'MEUD',type:'buy',shares:3, price:36.20},
+    {date:ago(6), ticker:'VJPA',type:'buy',shares:3, price:24.10},
+    {date:ago(3), ticker:'SPYL',type:'buy',shares:6, price:58.40},
+    {date:ago(3), ticker:'MEUD',type:'buy',shares:4, price:38.90},
+    {date:ago(3), ticker:'VJPA',type:'buy',shares:2, price:25.80},
+  ];
+  saveTx();
+}
+
+// ── Holdings (FIFO) ───────────────────────────────────────────────────────────
+function calcHoldings() {
+  const h={}, cb={}, rg={}, q={}, fees={};
+  cfg.tickers.forEach(t => { h[t]=0; cb[t]=0; rg[t]=0; q[t]=[]; fees[t]=0; });
+  [...transactions]
+    .filter(tx => cfg.tickers.includes(tx.ticker))
+    .sort((a,b) => a.date.localeCompare(b.date))
+    .forEach(({ticker:t,type,shares,price,fee=0}) => {
+      const f=parseFloat(fee)||0;
+      fees[t]+=f;
+      if (type==='buy') {
+        q[t].push({shares,price}); h[t]+=shares;
+        cb[t]+=shares*price+f;
+      } else {
+        let rem=shares; h[t]-=shares;
+        while(rem>0 && q[t].length) {
+          const lot=q[t][0], used=Math.min(lot.shares,rem);
+          rg[t]+=used*(price-lot.price); lot.shares-=used; cb[t]-=used*lot.price;
+          if(!lot.shares) q[t].shift(); rem-=used;
+        }
+        rg[t]-=f;
+      }
+    });
+  return {h,cb,rg,fees};
+}
+
+// ── Render ────────────────────────────────────────────────────────────────────
+function render() {
+  const {h,cb,rg,fees} = calcHoldings();
+  const vals={}, tickers=cfg.tickers;
+  let total=0;
+  tickers.forEach(t => { vals[t]=(h[t]||0)*(prices[t]||0); total+=vals[t]; });
+
+  // Header
+  document.getElementById('portfolioTitle').textContent = cfg.portfolioName;
+  document.getElementById('portfolioSubtitle').textContent =
+    tickers.join(' · ') + '  |  Target: ' + tickers.map(t=>cfg.targets[t]+'%').join(' / ');
+
+  // Total
+  const invested=Object.values(cb).reduce((a,b)=>a+b,0);
+  const gl=total-invested;
+  const glPct=invested>0?(gl/invested*100).toFixed(2):'0.00';
+  document.getElementById('totalValue').textContent = cfg.currency+total.toFixed(2);
+  document.getElementById('totalChange').innerHTML =
+    `<span class="${gl>=0?'positive':'negative'}">${fmtSigned(gl)} (${gl>=0?'+':''}${glPct}%) unrealised</span>`;
+
+  // ETF Cards
+  document.getElementById('etfCards').innerHTML = tickers.map(t => {
+    const pct=total>0?(vals[t]/total*100).toFixed(1):'0.0';
+    const g=vals[t]-cb[t], gPct=cb[t]>0?(g/cb[t]*100).toFixed(2):'0.00';
+    const gc=g>=0?'positive':'negative';
+    const exch = cfg.exchanges[t]||'';
+    return `<div class="card etf-card" style="border-color:${cfg.colors[t]}">
+      <div class="etf-ticker" style="color:${cfg.colors[t]}">${t}</div>
+      <div class="etf-name">${cfg.etfNames[t]||''}</div>
+      ${exch?`<div style="font-size:0.6rem;color:var(--muted);margin-bottom:10px;display:flex;align-items:center;gap:4px"><span style="opacity:0.5">🏛</span>${exch}</div>`:''}
+      <div class="etf-price">${(prices[t]||0)>0?cfg.currency+(prices[t]).toFixed(2):'—'}</div>
+      <div class="etf-meta"><span>${(h[t]||0).toFixed(3)} shares</span><span>${pct}% of portfolio</span></div>
+      <div class="etf-value">Value: <span>${cfg.currency+vals[t].toFixed(2)}</span></div>
+      <div class="etf-value ${gc}">G/L: ${fmtSigned(g)} (${g>=0?'+':''}${gPct}%)</div>
+    </div>`;
+  }).join('');
+
+  // Drift + Rebalance
+  const allocs={};
+  tickers.forEach(t => allocs[t]=total>0?(vals[t]/total*100):0);
+  const maxDrift=Math.max(...tickers.map(t=>Math.abs(allocs[t]-cfg.targets[t])));
+  const warn=maxDrift>=cfg.threshold;
+  document.getElementById('rebalanceAlert').innerHTML = `
+    <div class="rebalance-status ${warn?'warn':'ok'}">
+      <div class="icon">${warn?'⚠️':'✅'}</div>
+      <div class="msg"><strong>${warn?'Rebalance Recommended':'Portfolio On Target'}</strong>
+        Max drift: ${maxDrift.toFixed(1)}% ${warn?`(threshold: ${cfg.threshold}%)`:'— within tolerance'}
+      </div>
+      <div style="margin-left:auto">
+        <span class="alert-badge ${warn?'alert-warn':'alert-ok'}">${warn?'Action Needed':'Balanced'}</span>
+      </div>
+    </div>`;
+
+  document.getElementById('driftBars').innerHTML = tickers.map(t => {
+    const a=allocs[t], tgt=cfg.targets[t], d=a-tgt;
+    const dc=Math.abs(d)>=cfg.threshold?(d>0?'positive':'negative'):'';
+    return `<div style="margin-bottom:14px">
+      <div class="drift-label">
+        <span><span class="ticker-dot" style="background:${cfg.colors[t]}"></span>${t}</span>
+        <span>${a.toFixed(1)}% actual · ${tgt}% target · <span class="${dc}">${d>=0?'+':''}${d.toFixed(1)}%</span></span>
+      </div>
+      <div class="drift-bar-bg">
+        <div class="drift-bar-fill" style="width:${Math.min(a,100)}%;background:${cfg.colors[t]};opacity:0.8"></div>
+        <div class="drift-target" style="left:${tgt}%"></div>
+      </div>
+    </div>`;
+  }).join('');
+
+  // Pie
+  if(pieChart) pieChart.destroy();
+  pieChart=new Chart(document.getElementById('pieChart').getContext('2d'),{
+    type:'doughnut',
+    data:{labels:tickers,datasets:[{
+      data:tickers.map(t=>vals[t]||0.001),
+      backgroundColor:tickers.map(t=>cfg.colors[t]),
+      borderColor:'#111318',borderWidth:3
+    }]},
+    options:{responsive:true,plugins:{legend:{display:false},tooltip:{callbacks:{
+      label:ctx=>` ${cfg.currency}${ctx.raw.toFixed(2)} (${(ctx.raw/total*100).toFixed(1)}%)`
+    }}}}
+  });
+
+  // Chart legend
+  document.getElementById('chartLegend').innerHTML=tickers.map(t=>
+    `<div class="chart-legend-item"><div class="legend-dot" style="background:${cfg.colors[t]}"></div>${t}</div>`
+  ).join('');
+
+  // Tax
+  const realised=Object.values(rg).reduce((a,b)=>a+b,0);
+  document.getElementById('taxInvested').textContent=cfg.currency+invested.toFixed(2);
+  document.getElementById('taxValue').textContent=cfg.currency+total.toFixed(2);
+  const urEl=document.getElementById('taxUnrealised');
+  urEl.textContent=fmtSigned(gl); urEl.className=gl>=0?'positive':'negative';
+  const urpEl=document.getElementById('taxUnrealisedPct');
+  urpEl.textContent=(gl>=0?'+':'')+glPct+'%'; urpEl.className=gl>=0?'positive':'negative';
+  const rgEl=document.getElementById('taxRealised');
+  rgEl.textContent=fmtSigned(realised); rgEl.className=realised>=0?'positive':'negative';
+  const totalFees=Object.values(fees).reduce((a,b)=>a+b,0);
+  const feesEl=document.getElementById('taxFees');
+  feesEl.textContent = totalFees>0 ? '-'+cfg.currency+totalFees.toFixed(2) : cfg.currency+'0.00';
+  feesEl.className = totalFees>0?'negative':'';
+  document.getElementById('taxBreakdown').innerHTML=tickers.map(t=>{
+    const g=vals[t]-cb[t];
+    return `<div class="summary-row">
+      <span class="key"><span class="ticker-dot" style="background:${cfg.colors[t]}"></span>${t}</span>
+      <span class="${g>=0?'positive':'negative'}">${fmtSigned(g)}</span>
+    </div>`;
+  }).join('');
+
+  renderTxTable();
+  renderLineChart();
+  populateTxTicker();
+}
+
+// ── Transaction table ─────────────────────────────────────────────────────────
+function renderTxTable() {
+  const el=document.getElementById('txTable');
+  if(!transactions.length){el.innerHTML='<div class="empty-state">No transactions yet.</div>';return;}
+  const sorted=[...transactions].sort((a,b)=>b.date.localeCompare(a.date));
+  el.innerHTML=`<table><thead><tr>
+    <th>Date</th><th>Ticker</th><th>Type</th><th>Shares</th><th>Price</th><th>Total</th><th>Fee</th><th></th>
+  </tr></thead><tbody>${sorted.map(tx=>{
+    const oi=transactions.indexOf(tx), c=tx.type==='buy'?'positive':'negative';
+    const col=cfg.colors[tx.ticker]||'#666';
+    const fee=tx.fee||0;
+    return `<tr>
+      <td>${tx.date}</td>
+      <td><span class="ticker-dot" style="background:${col}"></span>${tx.ticker}</td>
+      <td class="${c}">${tx.type.toUpperCase()}</td>
+      <td>${tx.shares}</td>
+      <td>${cfg.currency}${tx.price.toFixed(2)}</td>
+      <td>${cfg.currency}${(tx.shares*tx.price).toFixed(2)}</td>
+      <td class="${fee>0?'negative':''}">${fee>0?'-'+cfg.currency+fee.toFixed(2):'—'}</td>
+      <td><span style="cursor:pointer;color:var(--muted);font-size:0.7rem" onclick="deleteTx(${oi})">✕</span></td>
+    </tr>`;
+  }).join('')}</tbody></table>`;
+}
+
+function deleteTx(i){ if(confirm('Delete this transaction?')){transactions.splice(i,1);saveTx();render();} }
+function populateTxTicker(){
+  const sel=document.getElementById('txTicker'), cur=sel.value;
+  sel.innerHTML=cfg.tickers.map(t=>`<option ${t===cur?'selected':''}>${t}</option>`).join('');
+}
+
+// ── Line chart ────────────────────────────────────────────────────────────────
+function renderLineChart(){
+  const tickers=cfg.tickers;
+  const sorted=[...transactions].filter(tx=>tickers.includes(tx.ticker)).sort((a,b)=>a.date.localeCompare(b.date));
+  if(!sorted.length){if(lineChart)lineChart.destroy();return;}
+
+  // Build snapshots: running share count per ticker at each transaction date
+  const snaps=[], run={};
+  tickers.forEach(t=>run[t]={shares:0});
+  sorted.forEach(tx=>{
+    run[tx.ticker].shares+=(tx.type==='buy'?1:-1)*tx.shares;
+    snaps.push({date:tx.date,state:JSON.parse(JSON.stringify(run))});
+  });
+  snaps.push({date:new Date().toISOString().split('T')[0],state:JSON.parse(JSON.stringify(run))});
+  const labels=[...new Set(snaps.map(s=>s.date))];
+  const byDate={}; snaps.forEach(s=>byDate[s.date]=s.state);
+
+  // For growth mode: track cost basis per ticker at each label point
+  const costAtDate={}; // { date: { ticker: cumulativeCost } }
+  const runCost={};
+  tickers.forEach(t=>runCost[t]=0);
+  sorted.forEach(tx=>{
+    const f=parseFloat(tx.fee)||0;
+    if(tx.type==='buy') runCost[tx.ticker]+=tx.shares*tx.price+f;
+    else runCost[tx.ticker]-=tx.shares*tx.price;
+    costAtDate[tx.date]={...runCost};
+  });
+  costAtDate[new Date().toISOString().split('T')[0]]={...runCost};
+  const latestCost={};
+  tickers.forEach(t=>latestCost[t]=0);
+
+  const latest={};
+  const datasets=tickers.map(t=>({
+    label:t,
+    data:labels.map(d=>{
+      if(byDate[d]) latest[t]=byDate[d][t];
+      if(costAtDate[d]) latestCost[t]=costAtDate[d][t]||latestCost[t];
+      const sn=latest[t]; if(!sn) return 0;
+      const val=parseFloat((sn.shares*(prices[t]||0)).toFixed(2));
+      if(chartMode==='value') return val;
+      if(chartMode==='growth'){
+        const cost=latestCost[t];
+        return cost>0?parseFloat(((val-cost)/cost*100).toFixed(2)):0;
+      }
+      return val; // allocation calculated below
+    }),
+    borderColor:cfg.colors[t],backgroundColor:cfg.colors[t]+'22',
+    fill:false,tension:0.3,pointRadius:4,pointHoverRadius:6
+  }));
+
+  if(chartMode==='allocation'){
+    labels.forEach((_,i)=>{
+      let tot=0; datasets.forEach(ds=>tot+=ds.data[i]);
+      datasets.forEach(ds=>ds.data[i]=tot>0?parseFloat((ds.data[i]/tot*100).toFixed(2)):0);
+    });
+    tickers.forEach(t=>datasets.push({
+      label:`${t} target`,data:labels.map(()=>cfg.targets[t]),
+      borderColor:cfg.colors[t],borderDash:[4,4],borderWidth:1,pointRadius:0,fill:false,tension:0
+    }));
+  }
+
+  // Add a zero reference line for growth mode
+  if(chartMode==='growth'){
+    datasets.push({
+      label:'Break-even',
+      data:labels.map(()=>0),
+      borderColor:'rgba(255,255,255,0.15)',
+      borderDash:[4,4],borderWidth:1,pointRadius:0,fill:false,tension:0
+    });
+  }
+
+  const tooltipLabel = ctx => {
+    if(ctx.dataset.label==='Break-even') return null;
+    if(chartMode==='value') return ` ${ctx.dataset.label}: ${cfg.currency}${ctx.raw}`;
+    if(chartMode==='growth') return ` ${ctx.dataset.label}: ${ctx.raw>=0?'+':''}${ctx.raw}%`;
+    return ` ${ctx.dataset.label}: ${ctx.raw}%`;
+  };
+  const yTickFmt = v => {
+    if(chartMode==='value') return cfg.currency+v;
+    if(chartMode==='growth') return (v>=0?'+':'')+v+'%';
+    return v+'%';
+  };
+
+  if(lineChart) lineChart.destroy();
+  lineChart=new Chart(document.getElementById('lineChart').getContext('2d'),{
+    type:'line',data:{labels,datasets},
+    options:{
+      responsive:true,interaction:{mode:'index',intersect:false},
+      plugins:{legend:{display:false},tooltip:{callbacks:{label:tooltipLabel}}},
+      scales:{
+        x:{grid:{color:'#1a1d24'},ticks:{color:'#6b7280',font:{family:'DM Mono',size:10}}},
+        y:{grid:{color:'#1a1d24'},ticks:{color:'#6b7280',font:{family:'DM Mono',size:10},callback:yTickFmt}}
+      }
+    }
+  });
+}
+
+function switchChart(mode,el){
+  chartMode=mode;
+  document.querySelectorAll('.tab').forEach(t=>t.classList.remove('active'));
+  el.classList.add('active'); renderLineChart();
+}
+
+// ── Price Engine ─────────────────────────────────────────────────────────────
+// Uses Financial Modeling Prep (FMP) free API — proper CORS support, no proxy needed.
+// Free tier: 250 requests/day. Sign up free at financialmodelingprep.com
+// Fallback: manual prices if no API key is set.
+
+let priceInterval = null;
+
+function setPriceStatus(state, msg){
+  const dot = document.getElementById('priceStatusDot');
+  const txt = document.getElementById('priceStatusText');
+  if(!dot || !txt) return;
+  const map = {
+    demo:     { color:'#6b7280', label:'Demo prices' },
+    manual:   { color:'#60c8f0', label:'Manual prices' },
+    loading:  { color:'#f0a860', label:'Fetching…' },
+    live_ok:  { color:'#c8f060', label: msg || 'Live' },
+    live_err: { color:'#f06060', label: msg || 'Price error' },
+  };
+  const s = map[state] || map.manual;
+  dot.style.background = s.color;
+  dot.style.animation = state === 'live_ok' ? 'pulse 2s infinite' : 'none';
+  txt.textContent = s.label;
+}
+
+function startPriceInterval(){
+  if(priceInterval) clearInterval(priceInterval);
+  const ms = (cfg.priceMode === 'fmp') ? 360000 : 30000; // 6 min for FMP = 240 calls/day
+  priceInterval = setInterval(tickPrices, ms);
+}
+
+async function tickPrices(){
+  if(cfg.priceMode === 'manual'){
+    setPriceStatus('manual');
+    render(); return;
+  }
+  if(cfg.priceMode === 'demo'){
+    cfg.tickers.forEach(t => {
+      prices[t] = parseFloat(((cfg.basePrices[t]||10) + (Math.random()-0.5)*0.4).toFixed(2));
+    });
+    setPriceStatus('demo');
+    render(); return;
+  }
+  if(cfg.priceMode === 'fmp') {
+    await fetchFMP(); return;
+  }
+}
+
+// ── Financial Modeling Prep ───────────────────────────────────────────────────
+// Free tier: 250 req/day, no credit card, proper CORS.
+// Signup: https://financialmodelingprep.com/register
+// Symbols: use the ticker as listed on the exchange, e.g. SPYL, MEUD, VJPA
+// For European listings FMP often needs the exchange suffix:
+//   SPYL.DE (XETRA), MEUD.AS (Amsterdam), VJPA.AS (Amsterdam), SPYL.L (LSE)
+
+async function fetchFMP(){
+  const rb = document.getElementById('refreshBtn');
+  if(rb){ rb.textContent = '↻ …'; rb.style.opacity = '0.6'; }
+  setPriceStatus('loading');
+
+  const syms = cfg.tickers.map(t => cfg.fmpSymbols?.[t] || t);
+
+  try {
+    // Call our Netlify serverless function — keeps API key safe on the server
+    const url = `/.netlify/functions/prices?symbols=${syms.join(',')}`;
+    const res = await fetch(url);
+    const data = await res.json();
+
+    if(data.error){
+      setPriceStatus('live_err', '⚠ ' + data.error.slice(0,40));
+      if(rb){ rb.textContent = '↻ Refresh'; rb.style.opacity = '1'; }
+      render(); return;
+    }
+
+    // data.prices = { "SPYL.DE": 63.41, "MEUD.AS": 42.10, ... }
+    let gotAny = false;
+    cfg.tickers.forEach(t => {
+      const sym = cfg.fmpSymbols?.[t] || t;
+      const p = data.prices?.[sym.toUpperCase()];
+      if(p && p > 0){ prices[t] = p; gotAny = true; }
+    });
+
+    cfg.tickers.forEach(t => {
+      if(!prices[t]) prices[t] = cfg.basePrices[t] || 0;
+    });
+
+    const now = new Date().toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'});
+    setPriceStatus(gotAny ? 'live_ok' : 'live_err',
+      gotAny ? 'Live · ' + now : '⚠ Symbols not found — check Settings');
+
+  } catch(e){
+    setPriceStatus('live_err', '⚠ ' + (e.message||'Network error').slice(0,30));
+    // Fall back to last known prices silently
+  }
+
+  if(rb){ rb.textContent = '↻ Refresh'; rb.style.opacity = '1'; }
+  render();
+}
+
+async function testFMP(){
+  const el = document.getElementById('fmpTestResult');
+  const key = document.getElementById('s-fmp-key')?.value?.trim();
+  el.style.display = 'block';
+  el.style.background = 'var(--surface2)';
+  el.style.border = '1px solid var(--border)';
+  el.style.color = 'var(--muted)';
+  el.textContent = '⏳ Testing…';
+
+  if(!key){
+    el.style.color = 'var(--warn)';
+    el.textContent = '⚠ Enter your API key first.';
+    return;
+  }
+
+  const syms = cfg.tickers.map((_,i) =>
+    (document.getElementById(`s-fmp-${i}`)?.value || cfg.tickers[i]).trim().toUpperCase()
+  );
+
+  try {
+    // Test via Netlify function
+    const url = `/.netlify/functions/prices?symbols=${syms.join(',')}&test=1`;
+    const res = await fetch(url);
+    const data = await res.json();
+
+    if(data.error){
+      el.style.color = 'var(--warn)';
+      el.style.background = 'rgba(240,96,96,0.07)';
+      el.style.border = '1px solid rgba(240,96,96,0.2)';
+      el.textContent = '✗ ' + data.error;
+      return;
+    }
+
+    const lines = syms.map(sym => {
+      const p = data.prices?.[sym.toUpperCase()];
+      if(p && p > 0) return `✓ ${sym} = ${cfg.currency}${p.toFixed(2)}`;
+      return `✗ ${sym} — not found. Try exchange suffix e.g. ${sym}.DE or ${sym}.AS`;
+    });
+
+    const allOk = lines.every(l => l.startsWith('✓'));
+    el.style.color = allOk ? 'var(--ok)' : 'var(--warn)';
+    el.style.background = allOk ? 'rgba(96,240,168,0.07)' : 'rgba(240,96,96,0.07)';
+    el.style.border = allOk ? '1px solid rgba(96,240,168,0.2)' : '1px solid rgba(240,96,96,0.2)';
+    el.innerHTML = lines.join('<br>');
+  } catch(e){
+    el.style.color = 'var(--warn)';
+    el.style.background = 'rgba(240,96,96,0.07)';
+    el.style.border = '1px solid rgba(240,96,96,0.2)';
+    el.style.display = 'block';
+    el.innerHTML = '✗ Error: ' + e.message + '<br><span style="color:var(--muted);font-size:0.9em">Make sure the Netlify function is deployed and the FMP_API_KEY environment variable is set.</span>';
+  }
+}
+
+
+// ── Transaction form ──────────────────────────────────────────────────────────
+function toggleForm(){
+  const f=document.getElementById('addForm');
+  f.style.display=f.style.display==='none'?'block':'none';
+  if(f.style.display==='block') document.getElementById('txDate').value=new Date().toISOString().split('T')[0];
+}
+function addTransaction(){
+  const date=document.getElementById('txDate').value;
+  const ticker=document.getElementById('txTicker').value;
+  const type=document.getElementById('txType').value;
+  const shares=parseFloat(document.getElementById('txShares').value);
+  const price=parseFloat(document.getElementById('txPrice').value);
+  const fee=parseFloat(document.getElementById('txFee').value)||0;
+  if(!date||isNaN(shares)||isNaN(price)||!shares||!price){alert('Please fill in all fields.');return;}
+  transactions.push({date,ticker,type,shares,price,fee});
+  saveTx();
+  document.getElementById('txShares').value='';
+  document.getElementById('txPrice').value='';
+  document.getElementById('txFee').value='';
+  render();
+}
+
+// ── Settings Panel ────────────────────────────────────────────────────────────
+function openSettings(){
+  // Currency
+  const knownCurrencies=['€','£','$','¥','CHF','kr','A$','C$'];
+  const currSel=document.getElementById('s-currency');
+  if(knownCurrencies.includes(cfg.currency)) { currSel.value=cfg.currency; document.getElementById('customCurrencyWrap').style.display='none'; }
+  else { currSel.value='custom'; document.getElementById('customCurrencyWrap').style.display='block'; document.getElementById('s-custom-currency').value=cfg.currency; }
+
+  document.getElementById('s-portfolio-name').value=cfg.portfolioName;
+  document.getElementById('s-threshold').value=cfg.threshold;
+  document.getElementById('s-price-mode').value=cfg.priceMode;
+
+  // ETF config rows
+  document.getElementById('etfConfigRows').innerHTML=cfg.tickers.map((t,i)=>{
+    const currentExch = cfg.exchanges?.[t]||'';
+    const knownExchValues = EXCHANGE_OPTIONS.filter(o=>o.value!=='custom').map(o=>o.value);
+    const isCustomExch = currentExch && !knownExchValues.includes(currentExch);
+    const exchOptions = EXCHANGE_OPTIONS.map(o=>`<option value="${o.value}" ${(isCustomExch&&o.value==='custom')||(!isCustomExch&&o.value===currentExch)?'selected':''}>${o.label}</option>`).join('');
+    return `
+    <div class="etf-config-row" style="grid-template-columns:80px 1fr 1fr 100px 44px">
+      <div class="s-field"><label>Ticker</label><input type="text" id="s-t-${i}" value="${t}" maxlength="10" style="text-transform:uppercase"></div>
+      <div class="s-field"><label>Full Name</label><input type="text" id="s-n-${i}" value="${cfg.etfNames[t]||''}" placeholder="e.g. S&P 500 UCITS"></div>
+      <div class="s-field">
+        <label>Exchange / Listing</label>
+        <select id="s-exch-${i}" onchange="toggleCustomExch(${i})">
+          <option value="">— None —</option>
+          ${exchOptions}
+        </select>
+        <input type="text" id="s-exch-custom-${i}" placeholder="e.g. Euronext Lisbon (PT)"
+          style="margin-top:6px;display:${isCustomExch?'block':'none'}"
+          value="${isCustomExch?currentExch:''}">
+      </div>
+      <div class="s-field"><label>Base Price (${cfg.currency})</label><input type="number" id="s-bp-${i}" value="${cfg.basePrices[t]||0}" step="0.01" min="0"></div>
+      <div class="s-field"><label>Colour</label><input type="color" id="s-c-${i}" value="${cfg.colors[t]||'#c8f060'}"></div>
+    </div>`;
+  }).join('');
+
+  // Targets
+  document.getElementById('targetInputs').innerHTML=cfg.tickers.map((t,i)=>`
+    <div class="s-field">
+      <label>${t} %</label>
+      <input type="number" id="s-tgt-${i}" value="${cfg.targets[t]}" min="0" max="100" step="1" oninput="updateTargetTotal()">
+    </div>`).join('');
+  updateTargetTotal();
+
+  // Populate all price-mode dependent sections
+  onPriceModeChange();
+
+  // FMP symbols
+  const fmpKeyEl = document.getElementById('s-fmp-key');
+  if(fmpKeyEl) fmpKeyEl.value = cfg.fmpApiKey || '';
+  const fmpSymRows = document.getElementById('fmpSymbolRows');
+  if(fmpSymRows) fmpSymRows.innerHTML = cfg.tickers.map((t,i)=>{
+    const exchSuffixes = {'XETRA (DE)':'.DE','Euronext Amsterdam (NL)':'.AS','Euronext Paris (FR)':'.PA','LSE (GB)':'.L','Borsa Italiana (IT)':'.MI','SIX (CH)':'.SW','Euronext Brussels (BE)':'.BR','Nasdaq Stockholm (SE)':'.ST','NYSE/Nasdaq (US)':''};
+    const exch = cfg.exchanges?.[t]||'';
+    const defaultSuffix = exchSuffixes[exch]||'.DE';
+    const val = cfg.fmpSymbols?.[t]||(t+defaultSuffix);
+    return `<div class="s-field">
+      <label>${t} FMP Symbol</label>
+      <input type="text" id="s-fmp-${i}" value="${val}" placeholder="${t}${defaultSuffix}" style="text-transform:uppercase">
+    </div>`;
+  }).join('');
+
+  // Manual prices
+  document.getElementById('manualPriceInputs').innerHTML=cfg.tickers.map((t,i)=>`
+    <div class="s-field">
+      <label>${t} Price</label>
+      <input type="number" id="s-mp-${i}" value="${prices[t]||0}" step="0.01" min="0">
+    </div>`).join('');
+
+  document.getElementById('overlay').classList.add('open');
+}
+
+function toggleCustomExch(i){
+  const sel=document.getElementById(`s-exch-${i}`);
+  document.getElementById(`s-exch-custom-${i}`).style.display=sel.value==='custom'?'block':'none';
+}
+
+function toggleCustomCurrency(){
+  document.getElementById('customCurrencyWrap').style.display=
+    document.getElementById('s-currency').value==='custom'?'block':'none';
+}
+function onPriceModeChange(){
+  const mode = document.getElementById('s-price-mode')?.value || cfg.priceMode;
+  const fmpEl = document.getElementById('fmpSection');
+  const manEl = document.getElementById('manualPricesSection');
+  if(fmpEl) fmpEl.style.display  = mode==='fmp'    ? 'block' : 'none';
+  if(manEl) manEl.style.display  = mode==='manual'  ? 'block' : 'none';
+}
+function updateTargetTotal(){
+  let sum=0;
+  cfg.tickers.forEach((_,i)=>sum+=parseFloat(document.getElementById(`s-tgt-${i}`)?.value||0));
+  const el=document.getElementById('targetTotal');
+  el.textContent=`Total: ${sum.toFixed(1)}% ${sum===100?'✓ — looks good!':'⚠ must equal 100%'}`;
+  el.className=`target-total ${Math.abs(sum-100)<0.01?'ok':'warn'}`;
+}
+
+function applySettings(){
+  // Read tickers
+  const newTickers=[], newNames={}, newExchanges={}, newColors={}, newTargets={}, newBP={};
+  cfg.tickers.forEach((_,i)=>{
+    const t=(document.getElementById(`s-t-${i}`)?.value||'').toUpperCase().trim();
+    if(!t) return;
+    newTickers.push(t);
+    newNames[t]=document.getElementById(`s-n-${i}`)?.value||'';
+    const exchSel=document.getElementById(`s-exch-${i}`);
+    newExchanges[t]=exchSel?.value==='custom'
+      ?(document.getElementById(`s-exch-custom-${i}`)?.value.trim()||'')
+      :(exchSel?.value||'');
+    newColors[t]=document.getElementById(`s-c-${i}`)?.value||'#c8f060';
+    newTargets[t]=parseFloat(document.getElementById(`s-tgt-${i}`)?.value||0);
+    newBP[t]=parseFloat(document.getElementById(`s-bp-${i}`)?.value||10);
+  });
+
+  const sum=Object.values(newTargets).reduce((a,b)=>a+b,0);
+  if(Math.abs(sum-100)>0.1){ alert(`Targets must add up to 100%. Currently: ${sum.toFixed(1)}%`); return; }
+
+  const currSel=document.getElementById('s-currency');
+  cfg.currency=currSel.value==='custom'?(document.getElementById('s-custom-currency').value.trim()||'€'):currSel.value;
+  cfg.portfolioName=document.getElementById('s-portfolio-name').value||'Portfolio Tracker';
+  cfg.tickers=newTickers; cfg.etfNames=newNames; cfg.exchanges=newExchanges; cfg.colors=newColors;
+  cfg.targets=newTargets; cfg.basePrices=newBP;
+  cfg.threshold=parseFloat(document.getElementById('s-threshold').value)||5;
+  cfg.priceMode=document.getElementById('s-price-mode').value;
+
+  // Save FMP key + symbols
+  cfg.fmpApiKey = document.getElementById('s-fmp-key')?.value?.trim() || '';
+  const newFmpSymbols={};
+  cfg.tickers.forEach((t,i)=>{
+    const raw = document.getElementById(`s-fmp-${i}`)?.value || t;
+    newFmpSymbols[t] = raw.toUpperCase().trim();
+  });
+  cfg.fmpSymbols = newFmpSymbols;
+
+  // Manual prices
+  if(cfg.priceMode==='manual'){
+    cfg.tickers.forEach((t,i)=>{ prices[t]=parseFloat(document.getElementById(`s-mp-${i}`)?.value||0); });
+    cfg.manualPrices={...prices};
+  }
+
+  saveCfg();
+  closeSettings();
+  startPriceInterval();
+  tickPrices();
+}
+
+function closeSettings(){ document.getElementById('overlay').classList.remove('open'); }
+
+function clearAllData(){
+  if(confirm('Delete ALL transaction history? This cannot be undone.')){
+    transactions=[]; saveTx(); closeSettings(); render();
+  }
+}
+
+// ── Mobile nav ────────────────────────────────────────────────────────────────
+const SECTIONS = ['overview','allocation','chart','transactions'];
+
+function showSection(id, btn) {
+  // On desktop (>600px) all sections always visible — do nothing
+  if(window.innerWidth > 600) return;
+  SECTIONS.forEach(s => {
+    const el = document.getElementById('sec-' + s);
+    if(el) el.classList.toggle('active', s === id);
+  });
+  document.querySelectorAll('#mobileNav .nav-item').forEach(b => b.classList.remove('active'));
+  if(btn) btn.classList.add('active');
+  window.scrollTo({top: 0, behavior: 'smooth'});
+}
+
+// On resize back to desktop, show all sections
+window.addEventListener('resize', () => {
+  if(window.innerWidth > 600) {
+    SECTIONS.forEach(s => {
+      const el = document.getElementById('sec-' + s);
+      if(el) el.classList.add('active');
+    });
+  }
+});
+
+// ── Init ──────────────────────────────────────────────────────────────────────
+(function detectFileProtocol(){
+  if(window.location.protocol === 'file:') {
+    const banner = document.getElementById('fileBanner');
+    if(banner) banner.style.display = 'flex';
+    // Force manual mode so UI still works, prices just won't auto-fetch
+    if(cfg.priceMode === 'fmp') {
+      cfg.priceMode = 'manual';
+      saveCfg();
+    }
+  }
+})();
+tickPrices();
+startPriceInterval();
+</script>
+
+<!-- Mobile bottom nav -->
+<nav id="mobileNav">
+  <div class="nav-items">
+    <button class="nav-item active" onclick="showSection('overview',this)">
+      <span class="nav-icon">📊</span>Overview
+    </button>
+    <button class="nav-item" onclick="showSection('allocation',this)">
+      <span class="nav-icon">⚖️</span>Allocation
+    </button>
+    <button class="nav-item" onclick="showSection('chart',this)">
+      <span class="nav-icon">📈</span>Chart
+    </button>
+    <button class="nav-item" onclick="showSection('transactions',this)">
+      <span class="nav-icon">📋</span>Trades
+    </button>
+  </div>
+</nav>
+
+</body>
+</html>
