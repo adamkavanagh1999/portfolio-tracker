@@ -1115,8 +1115,12 @@ function onPriceModeChange(){
   if(manEl) manEl.style.display  = mode==='manual'  ? 'block' : 'none';
 }
 function updateTargetTotal(){
+  // Count rows currently in the form, not cfg.tickers — catches newly added securities
+  const rowCount = document.getElementById('etfConfigRows')?.children.length || cfg.tickers.length;
   let sum=0;
-  cfg.tickers.forEach((_,i)=>sum+=parseFloat(document.getElementById(`s-tgt-${i}`)?.value||0));
+  for(let i=0; i<rowCount; i++){
+    sum += parseFloat(document.getElementById(`s-tgt-${i}`)?.value||0);
+  }
   const el=document.getElementById('targetTotal');
   el.textContent=`Total: ${sum.toFixed(1)}% ${sum===100?'✓ — looks good!':'⚠ must equal 100%'}`;
   el.className=`target-total ${Math.abs(sum-100)<0.01?'ok':'warn'}`;
