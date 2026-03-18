@@ -338,7 +338,10 @@
     </div>
 
     <div class="s-section">
-      <div class="s-section-title">ETFs — Ticker, Name & Colour</div>
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;padding-bottom:8px;border-bottom:1px solid var(--border)">
+        <span style="font-size:0.6rem;text-transform:uppercase;letter-spacing:0.15em;color:var(--muted)">Securities</span>
+        <button class="btn-secondary" style="font-size:0.6rem;padding:4px 10px" onclick="addSecurityRow()">+ Add Security</button>
+      </div>
       <div id="etfConfigRows"></div>
     </div>
 
@@ -1050,7 +1053,7 @@ function openSettings(){
     const isCustomExch = currentExch && !knownExchValues.includes(currentExch);
     const exchOptions = EXCHANGE_OPTIONS.map(o=>`<option value="${o.value}" ${(isCustomExch&&o.value==='custom')||(!isCustomExch&&o.value===currentExch)?'selected':''}>${o.label}</option>`).join('');
     return `
-    <div class="etf-config-row" style="grid-template-columns:80px 1fr 1fr 100px 44px">
+    <div class="etf-config-row" style="grid-template-columns:80px 1fr 1fr 100px 44px 32px;margin-bottom:10px">
       <div class="s-field"><label>Ticker</label><input type="text" id="s-t-${i}" value="${t}" maxlength="10" style="text-transform:uppercase"></div>
       <div class="s-field"><label>Full Name</label><input type="text" id="s-n-${i}" value="${cfg.etfNames[t]||''}" placeholder="e.g. S&P 500 UCITS"></div>
       <div class="s-field">
@@ -1065,6 +1068,10 @@ function openSettings(){
       </div>
       <div class="s-field"><label>Base Price (${cfg.currency})</label><input type="number" id="s-bp-${i}" value="${cfg.basePrices[t]||0}" step="0.01" min="0"></div>
       <div class="s-field"><label>Colour</label><input type="color" id="s-c-${i}" value="${cfg.colors[t]||'#c8f060'}"></div>
+      <div class="s-field"><label>&nbsp;</label>
+        <button onclick="removeSecurityRow(${i})" title="Remove this security"
+          style="background:rgba(240,96,96,0.1);color:var(--warn);border:1px solid rgba(240,96,96,0.3);font-family:inherit;font-size:0.8rem;padding:6px;border-radius:4px;cursor:pointer;width:100%">✕</button>
+      </div>
     </div>`;
   }).join('');
 
@@ -1175,6 +1182,91 @@ function applySettings(){
   closeSettings();
   startPriceInterval();
   tickPrices();
+}
+
+function addSecurityRow(){
+  // Read current tickers from the form inputs (not cfg, since user may have edited)
+  const rows = document.getElementById('etfConfigRows').children;
+  const count = rows.length;
+  const newIdx = count;
+  const newTicker = 'ETF' + (count + 1);
+  const fallbackColors = ['#c8f060','#60c8f0','#f0a860','#f060c8','#60f0c8','#a860f0','#f0f060'];
+  const color = fallbackColors[count % fallbackColors.length];
+
+  // Build exchange options
+  const EXCHANGE_OPTIONS_ADD = [
+    {label:'XETRA (DE) — Frankfurt',value:'XETRA (DE)'},
+    {label:'Euronext Amsterdam (NL)',value:'Euronext Amsterdam (NL)'},
+    {label:'Euronext Paris (FR)',value:'Euronext Paris (FR)'},
+    {label:'London Stock Exchange (GB)',value:'LSE (GB)'},
+    {label:'Borsa Italiana (IT)',value:'Borsa Italiana (IT)'},
+    {label:'SIX Swiss Exchange (CH)',value:'SIX (CH)'},
+    {label:'Euronext Brussels (BE)',value:'Euronext Brussels (BE)'},
+    {label:'Nasdaq Stockholm (SE)',value:'Nasdaq Stockholm (SE)'},
+    {label:'NYSE/Nasdaq (US)',value:'NYSE/Nasdaq (US)'},
+    {label:'Custom / Other',value:'custom'},
+  ];
+  const exchOpts = EXCHANGE_OPTIONS_ADD.map(o=>`<option value="${o.value}">${o.label}</option>`).join('');
+
+  const div = document.createElement('div');
+  div.className = 'etf-config-row';
+  div.style.cssText = 'grid-template-columns:80px 1fr 1fr 100px 44px 32px;margin-bottom:10px';
+  div.innerHTML = `
+    <div class="s-field"><label>Ticker</label><input type="text" id="s-t-${newIdx}" value="${newTicker}" maxlength="10" style="text-transform:uppercase"></div>
+    <div class="s-field"><label>Full Name</label><input type="text" id="s-n-${newIdx}" value="" placeholder="e.g. iShares MSCI World"></div>
+    <div class="s-field">
+      <label>Exchange / Listing</label>
+      <select id="s-exch-${newIdx}" onchange="toggleCustomExch(${newIdx})">
+        <option value="">— None —</option>
+        ${exchOpts}
+      </select>
+      <input type="text" id="s-exch-custom-${newIdx}" placeholder="e.g. Euronext Lisbon (PT)" style="margin-top:6px;display:none">
+    </div>
+    <div class="s-field"><label>Base Price (${cfg.currency})</label><input type="number" id="s-bp-${newIdx}" value="0" step="0.01" min="0"></div>
+    <div class="s-field"><label>Colour</label><input type="color" id="s-c-${newIdx}" value="${color}"></div>
+    <div class="s-field"><label>&nbsp;</label>
+      <button onclick="removeSecurityRow(${newIdx})" title="Remove"
+        style="background:rgba(240,96,96,0.1);color:var(--warn);border:1px solid rgba(240,96,96,0.3);font-family:inherit;font-size:0.8rem;padding:6px;border-radius:4px;cursor:pointer;width:100%">✕</button>
+    </div>`;
+  document.getElementById('etfConfigRows').appendChild(div);
+
+  // Also add a target % input
+  const tgtDiv = document.createElement('div');
+  tgtDiv.className = 's-field';
+  tgtDiv.innerHTML = `<label>${newTicker} %</label><input type="number" id="s-tgt-${newIdx}" value="0" min="0" max="100" step="1" oninput="updateTargetTotal()">`;
+  document.getElementById('targetInputs').appendChild(tgtDiv);
+
+  updateTargetTotal();
+}
+
+function removeSecurityRow(idx){
+  const rows = document.getElementById('etfConfigRows');
+  const tgts = document.getElementById('targetInputs');
+  if(rows.children.length <= 1){ alert('You must have at least one security.'); return; }
+  // Remove by index
+  if(rows.children[idx]) rows.children[idx].remove();
+  if(tgts.children[idx]) tgts.children[idx].remove();
+  // Re-index remaining rows so IDs stay consistent
+  Array.from(rows.children).forEach((row, i) => {
+    row.querySelectorAll('[id]').forEach(el => {
+      el.id = el.id.replace(/-\d+$/, '-' + i);
+    });
+    row.querySelectorAll('[onchange],[onclick],[oninput]').forEach(el => {
+      ['onchange','onclick','oninput'].forEach(attr => {
+        const v = el.getAttribute(attr);
+        if(v) el.setAttribute(attr, v.replace(/\d+\)/, i + ')'));
+      });
+    });
+  });
+  Array.from(tgts.children).forEach((tgt, i) => {
+    tgt.querySelectorAll('[id]').forEach(el => {
+      el.id = el.id.replace(/-\d+$/, '-' + i);
+    });
+    const lbl = tgt.querySelector('label');
+    const inp = tgt.querySelector('input');
+    if(inp) inp.setAttribute('oninput','updateTargetTotal()');
+  });
+  updateTargetTotal();
 }
 
 function closeSettings(){ document.getElementById('overlay').classList.remove('open'); }
