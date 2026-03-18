@@ -960,26 +960,28 @@ async function fetchFMP(){
 
 async function testFMP(){
   const el = document.getElementById('fmpTestResult');
-  const key = document.getElementById('s-fmp-key')?.value?.trim();
   el.style.display = 'block';
   el.style.background = 'var(--surface2)';
   el.style.border = '1px solid var(--border)';
   el.style.color = 'var(--muted)';
-  el.textContent = '⏳ Testing…';
+  el.textContent = '⏳ Testing Yahoo Finance symbols…';
 
-  if(!key){
+  // Read Yahoo symbols from the inline s-ysym fields in each ETF row
+  const count = document.getElementById('etfConfigRows').children.length;
+  const syms = [];
+  for(let i = 0; i < count; i++){
+    const val = (document.getElementById(`s-ysym-${i}`)?.value || '').trim().toUpperCase();
+    if(val) syms.push(val);
+  }
+
+  if(!syms.length){
     el.style.color = 'var(--warn)';
-    el.textContent = '⚠ Enter your API key first.';
+    el.textContent = '⚠ No Yahoo symbols entered — add a symbol (e.g. SPYL.DE) in the Yahoo Symbol field for each security above.';
     return;
   }
 
-  const syms = cfg.tickers.map((_,i) =>
-    (document.getElementById(`s-fmp-${i}`)?.value || cfg.tickers[i]).trim().toUpperCase()
-  );
-
   try {
-    // Test via Netlify function
-    const url = `/.netlify/functions/prices?symbols=${syms.join(',')}&test=1`;
+    const url = `/.netlify/functions/prices?symbols=${syms.join(',')}`;
     const res = await fetch(url);
     const data = await res.json();
 
@@ -994,7 +996,7 @@ async function testFMP(){
     const lines = syms.map(sym => {
       const p = data.prices?.[sym.toUpperCase()];
       if(p && p > 0) return `✓ ${sym} = ${cfg.currency}${p.toFixed(2)}`;
-      return `✗ ${sym} — not found. Try e.g. ${sym}.DE (XETRA) or ${sym}.AS (Euronext Amsterdam)`;
+      return `✗ ${sym} — not found. Check the symbol at finance.yahoo.com (e.g. SPYL.DE, MEUD.AS, VJPA.AS)`;
     });
 
     const allOk = lines.every(l => l.startsWith('✓'));
@@ -1007,7 +1009,7 @@ async function testFMP(){
     el.style.background = 'rgba(240,96,96,0.07)';
     el.style.border = '1px solid rgba(240,96,96,0.2)';
     el.style.display = 'block';
-    el.innerHTML = '✗ Error: ' + e.message + '<br><span style="color:var(--muted);font-size:0.9em">Make sure the Netlify function is deployed and the FMP_API_KEY environment variable is set.</span>';
+    el.innerHTML = '✗ ' + e.message + '<br><span style="color:var(--muted);font-size:0.9em">Make sure the Netlify function is deployed correctly.</span>';
   }
 }
 
