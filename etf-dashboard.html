@@ -883,7 +883,7 @@ function setPriceStatus(state, msg){
 
 function startPriceInterval(){
   if(priceInterval) clearInterval(priceInterval);
-  const ms = (cfg.priceMode === 'fmp') ? 360000 : 30000; // 6 min for FMP = 240 calls/day
+  const ms = (cfg.priceMode === 'fmp') ? 21600000 : 30000; // 6 hours = 4x per day
   priceInterval = setInterval(tickPrices, ms);
 }
 
@@ -944,7 +944,7 @@ async function fetchFMP(){
 
     const now = new Date().toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'});
     setPriceStatus(gotAny ? 'live_ok' : 'live_err',
-      gotAny ? 'Live · ' + now : '⚠ Symbols not found — check Settings');
+      gotAny ? 'Yahoo · ' + now : '⚠ Symbols not found — check Settings');
 
   } catch(e){
     setPriceStatus('live_err', '⚠ ' + (e.message||'Network error').slice(0,30));
@@ -991,7 +991,7 @@ async function testFMP(){
     const lines = syms.map(sym => {
       const p = data.prices?.[sym.toUpperCase()];
       if(p && p > 0) return `✓ ${sym} = ${cfg.currency}${p.toFixed(2)}`;
-      return `✗ ${sym} — not found. Try exchange suffix e.g. ${sym}.DE or ${sym}.AS`;
+      return `✗ ${sym} — not found. Try e.g. ${sym}.DE (XETRA) or ${sym}.AS (Euronext Amsterdam)`;
     });
 
     const allOk = lines.every(l => l.startsWith('✓'));
