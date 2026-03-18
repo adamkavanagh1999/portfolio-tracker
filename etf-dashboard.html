@@ -358,7 +358,7 @@
           <label>Price Source</label>
           <select id="s-price-mode" onchange="onPriceModeChange()">
             <option value="manual">Manual — I enter prices</option>
-            <option value="fmp">Financial Modeling Prep (free API key)</option>
+            <option value="fmp">Yahoo Finance (auto, 4× per day)</option>
             <option value="demo">Demo (simulated)</option>
           </select>
         </div>
@@ -369,29 +369,21 @@
       </div>
     </div>
 
-    <!-- FMP section -->
+    <!-- Yahoo Finance section — always visible when price mode = fmp/yahoo -->
     <div class="s-section" id="fmpSection" style="display:none">
-      <div class="s-section-title">🔑 Financial Modeling Prep — Free API</div>
-      <div class="s-field" style="margin-bottom:12px">
-        <label>API Key</label>
-        <input type="text" id="s-fmp-key" placeholder="Paste your free FMP API key here" autocomplete="off" style="font-family:monospace">
-      </div>
-      <div class="s-row-3" id="fmpSymbolRows"></div>
-      <div style="margin-top:10px;padding:12px;background:var(--surface2);border-radius:6px;font-size:0.65rem;color:var(--muted);line-height:1.9">
-        <strong style="color:var(--accent)">Free tier: 250 requests/day — more than enough for 3 ETFs.</strong><br>
-        Sign up at <strong style="color:var(--accent)">financialmodelingprep.com/register</strong> — no credit card needed.<br>
-        Covers European exchanges. Symbol format examples:<br>
+      <div class="s-section-title">📡 Live Prices — Yahoo Finance</div>
+      <div style="padding:10px;background:var(--surface2);border-radius:6px;font-size:0.65rem;color:var(--muted);line-height:1.9;margin-bottom:12px">
+        <strong style="color:var(--accent)">No API key needed.</strong> Prices refresh automatically 4× per day via Yahoo Finance.<br>
+        Enter the Yahoo symbol for each security in the <strong style="color:var(--text)">Yahoo Symbol</strong> field in the Securities section above.<br>
+        Find symbols at <strong style="color:var(--text)">finance.yahoo.com</strong> — e.g.
         <span style="color:var(--accent)">SPYL.DE</span> = XETRA &nbsp;·&nbsp;
         <span style="color:var(--accent)">MEUD.AS</span> = Euronext Amsterdam &nbsp;·&nbsp;
-        <span style="color:var(--accent)">VJPA.AS</span> = Euronext Amsterdam<br>
-        <span style="color:var(--accent)">SPYL.L</span> = LSE &nbsp;·&nbsp;
-        <span style="color:var(--accent)">SPYL.PA</span> = Euronext Paris<br>
-        Prices refresh every 60 seconds automatically.
+        <span style="color:var(--accent)">VJPA.AS</span> = Euronext Amsterdam
       </div>
       <div id="fmpTestResult" style="margin-top:8px;font-size:0.65rem;padding:8px 10px;border-radius:5px;display:none"></div>
       <div style="margin-top:10px;display:flex;gap:8px;align-items:center">
-        <button class="btn-secondary" style="font-size:0.65rem;padding:6px 12px" onclick="testFMP()">🔍 Test API Key & Symbols</button>
-        <span style="font-size:0.6rem;color:var(--muted)">Verifies key and fetches live prices for all symbols</span>
+        <button class="btn-secondary" style="font-size:0.65rem;padding:6px 12px" onclick="testFMP()">🔍 Test Yahoo Symbols</button>
+        <span style="font-size:0.6rem;color:var(--muted)">Fetches live prices for all configured symbols</span>
       </div>
     </div>
 
@@ -532,7 +524,7 @@ const DEFAULTS = {
   colors: { SPYL:'#c8f060', MEUD:'#60c8f0', VJPA:'#f0a860' },
   targets: { SPYL:60, MEUD:30, VJPA:10 },
   threshold: 5,
-  priceMode: 'manual',
+  priceMode: 'fmp',
   basePrices: { SPYL:61.45, MEUD:40.12, VJPA:27.30 },
   manualPrices: { SPYL:61.45, MEUD:40.12, VJPA:27.30 },
   fmpApiKey: '',
