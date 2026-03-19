@@ -606,8 +606,10 @@ let lineChart, pieChart;
 
 const saveCfg = () => localStorage.setItem('etf_cfg', JSON.stringify(cfg));
 const saveTx  = () => localStorage.setItem('etf_txs', JSON.stringify(transactions));
-const fmt     = v => cfg.currency + Math.abs(v).toFixed(2);
-const fmtSigned = v => (v>=0?'+':'-') + fmt(v);
+const fmt     = v => cfg.currency + Math.abs(v).toLocaleString('en-IE', {minimumFractionDigits:2, maximumFractionDigits:2});
+const fmtS    = v => (v>=0?'+':'-') + fmt(v);
+const fmtSigned = fmtS;
+const fmtN    = (v, dp=2) => v.toLocaleString('en-IE', {minimumFractionDigits:dp, maximumFractionDigits:dp});
 
 // ── Seed demo data ────────────────────────────────────────────────────────────
 if (!transactions.length) {
