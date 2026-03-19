@@ -283,6 +283,35 @@
     .mobile-section { display: none; }
     .mobile-section.active { display: block; }
   }
+
+  /* ── New feature sections ── */
+  .feature-card { background:var(--surface); border:1px solid var(--border); border-radius:8px; padding:20px; margin-bottom:20px; }
+  .feature-title { font-family:'Instrument Serif',serif; font-size:1.1rem; font-weight:400; margin-bottom:16px; }
+  .stat-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(140px,1fr)); gap:12px; margin-bottom:16px; }
+  .stat-box { background:var(--surface2); border:1px solid var(--border); border-radius:6px; padding:12px; }
+  .stat-box .stat-label { font-size:0.58rem; color:var(--muted); text-transform:uppercase; letter-spacing:0.1em; margin-bottom:4px; }
+  .stat-box .stat-value { font-family:'Instrument Serif',serif; font-size:1.3rem; }
+  .stat-box .stat-sub { font-size:0.65rem; color:var(--muted); margin-top:2px; }
+  .year-row { display:grid; grid-template-columns:60px 1fr 1fr 1fr 1fr 1fr; gap:8px; align-items:center; padding:8px 0; border-bottom:1px solid var(--border); font-size:0.7rem; }
+  .year-row:last-child { border-bottom:none; }
+  .year-row.header { font-size:0.58rem; color:var(--muted); text-transform:uppercase; letter-spacing:0.08em; padding-bottom:6px; }
+  .rebal-row { display:grid; grid-template-columns:1fr 1fr 1fr 1fr; gap:10px; align-items:center; padding:10px; background:var(--surface2); border-radius:6px; margin-bottom:8px; border:1px solid var(--border); font-size:0.72rem; }
+  .rebal-action-buy { color:var(--ok); }
+  .rebal-action-sell { color:var(--warn); }
+  .rebal-action-hold { color:var(--muted); }
+  .proj-controls { display:grid; grid-template-columns:repeat(auto-fit,minmax(160px,1fr)); gap:12px; margin-bottom:20px; }
+  .proj-controls .s-field label { font-size:0.6rem; color:var(--muted); text-transform:uppercase; letter-spacing:0.08em; display:block; margin-bottom:4px; }
+
+  @media print {
+    #mobileNav, header .header-right button, #fileBanner { display:none !important; }
+    .mobile-section { display:block !important; }
+    body { padding:12px; background:white; color:black; }
+    .card, .feature-card { border:1px solid #ccc; break-inside:avoid; }
+    .card-title, .feature-title { color:#333; }
+    .etf-price, .total-value .amount { color:#000; }
+    #printSummary { display:block !important; }
+  }
+  #printSummary { display:none; }
 </style>
 </head>
 <body>
@@ -437,6 +466,7 @@
       <span id="priceStatusDot" style="width:7px;height:7px;border-radius:50%;background:var(--muted);display:inline-block"></span>
       <span id="priceStatusText">Prices: Demo</span>
     </div>
+    <button class="settings-btn" onclick="printSummary()" title="Print / Save as PDF">🖨 Print</button>
     <button class="settings-btn" onclick="tickPrices()" id="refreshBtn" title="Refresh prices now">↻ Refresh</button>
     <button class="settings-btn" onclick="openSettings()">⚙ Settings</button>
     <div class="total-value">
@@ -730,6 +760,9 @@ function render() {
   renderTxTable();
   renderLineChart();
   populateTxTicker();
+  renderAnnualSummary();
+  renderRebalCalc();
+  renderProjection();
 }
 
 // ── Transaction table ─────────────────────────────────────────────────────────
@@ -1330,8 +1363,249 @@ function importData(event){
   event.target.value = '';
 }
 
+
+// ── Annual Summary ────────────────────────────────────────────────────────────
+function renderAnnualSummary(){
+  const el = document.getElementById('annualSummaryContent');
+  if(!el) return;
+  if(!transactions.length){ el.innerHTML='<p style="color:var(--muted);font-size:0.75rem">No transactions yet.</p>'; return; }
+
+  // Group transactions by year
+  const years = {};
+  transactions.forEach(tx => {
+    const y = tx.date.split('-')[0];
+    if(!years[y]) years[y] = { invested:0, fees:0, txCount:0 };
+    const f = parseFloat(tx.fee)||0;
+    years[y].fees += f;
+    years[y].txCount++;
+    if(tx.type==='buy') years[y].invested += tx.shares * tx.price + f;
+    else years[y].invested -= tx.shares * tx.price;
+  });
+
+  const sortedYears = Object.keys(years).sort();
+  const C = cfg.currency;
+
+  // Current portfolio value and cost basis
+  const { h, cb } = calcHoldings(transactions, cfg.tickers);
+  const total = cfg.tickers.reduce((s,t)=>s+(h[t]||0)*(prices[t]||0), 0);
+  const invested = Object.values(cb).reduce((a,b)=>a+b, 0);
+  const totalGL = total - invested;
+
+  let html = `
+    <div class="stat-grid" style="margin-bottom:20px">
+      <div class="stat-box">
+        <div class="stat-label">Total Invested</div>
+        <div class="stat-value">${C}${invested.toFixed(0)}</div>
+      </div>
+      <div class="stat-box">
+        <div class="stat-label">Current Value</div>
+        <div class="stat-value" style="color:var(--accent)">${C}${total.toFixed(0)}</div>
+      </div>
+      <div class="stat-box">
+        <div class="stat-label">Total Return</div>
+        <div class="stat-value" style="color:${totalGL>=0?'var(--ok)':'var(--warn)'}">${totalGL>=0?'+':''}${C}${totalGL.toFixed(0)}</div>
+        <div class="stat-sub">${invested>0?((totalGL/invested)*100).toFixed(1):'0'}% overall</div>
+      </div>
+      <div class="stat-box">
+        <div class="stat-label">Total Fees Paid</div>
+        <div class="stat-value" style="color:var(--warn)">${C}${sortedYears.reduce((s,y)=>s+years[y].fees,0).toFixed(0)}</div>
+      </div>
+    </div>
+    <div class="year-row header">
+      <span>Year</span><span>Invested</span><span>Fees</span><span>Trades</span><span>Cumul. Invested</span><span>Portfolio Value</span>
+    </div>`;
+
+  let cumul = 0;
+  sortedYears.forEach(y => {
+    cumul += years[y].invested;
+    const isCurrentYear = y === new Date().getFullYear().toString();
+    html += `<div class="year-row" style="${isCurrentYear?'color:var(--accent)':''}">
+      <span>${y}</span>
+      <span>${C}${years[y].invested.toFixed(0)}</span>
+      <span style="color:var(--warn)">${C}${years[y].fees.toFixed(2)}</span>
+      <span>${years[y].txCount}</span>
+      <span>${C}${cumul.toFixed(0)}</span>
+      <span style="color:var(--accent)">${isCurrentYear?C+total.toFixed(0):'—'}</span>
+    </div>`;
+  });
+
+  el.innerHTML = html;
+}
+
+// ── Rebalance Calculator ──────────────────────────────────────────────────────
+function renderRebalCalc(){
+  const el = document.getElementById('rebalCalcContent');
+  const symEl = document.getElementById('rebalCurrencySymbol');
+  if(!el) return;
+  if(symEl) symEl.textContent = cfg.currency;
+
+  const { h, cb } = calcHoldings(transactions, cfg.tickers);
+  const vals = {}; let total = 0;
+  cfg.tickers.forEach(t=>{ vals[t]=(h[t]||0)*(prices[t]||0); total+=vals[t]; });
+
+  const newCash = parseFloat(document.getElementById('rebalCash')?.value)||0;
+  const grandTotal = total + newCash;
+  const C = cfg.currency;
+
+  if(grandTotal === 0){ el.innerHTML='<p style="color:var(--muted);font-size:0.75rem">Enter prices and transactions first.</p>'; return; }
+
+  const actions = cfg.tickers.map(t => {
+    const targetVal  = grandTotal * (cfg.targets[t]||0) / 100;
+    const currentVal = vals[t];
+    const diff       = targetVal - currentVal;
+    const price      = prices[t]||0;
+    const shares     = price > 0 ? Math.abs(diff) / price : 0;
+    return { t, targetVal, currentVal, diff, shares, price };
+  });
+
+  let out = `
+    <div class="stat-grid" style="margin-bottom:16px">
+      <div class="stat-box"><div class="stat-label">Current Value</div><div class="stat-value">${C}${total.toFixed(0)}</div></div>
+      <div class="stat-box"><div class="stat-label">New Cash</div><div class="stat-value">${C}${newCash.toFixed(0)}</div></div>
+      <div class="stat-box"><div class="stat-label">Total to Allocate</div><div class="stat-value" style="color:var(--accent)">${C}${grandTotal.toFixed(0)}</div></div>
+    </div>
+    <div style="font-size:0.6rem;color:var(--muted);text-transform:uppercase;letter-spacing:0.08em;margin-bottom:8px">Recommended Actions</div>`;
+
+  actions.forEach(({t, targetVal, currentVal, diff, shares, price}) => {
+    const action = Math.abs(diff) < 1 ? 'hold' : diff > 0 ? 'buy' : 'sell';
+    const cls = action==='buy'?'rebal-action-buy':action==='sell'?'rebal-action-sell':'rebal-action-hold';
+    const icon = action==='buy'?'▲':action==='sell'?'▼':'—';
+    out += `<div class="rebal-row">
+      <span style="color:${cfg.colors[t]||'var(--accent)'}">●&nbsp;${t}</span>
+      <span class="${cls}">${icon} ${action.toUpperCase()}${action!=='hold'?' '+shares.toFixed(3)+' shares':''}</span>
+      <span style="color:var(--muted)">${C}${currentVal.toFixed(0)} → ${C}${targetVal.toFixed(0)}</span>
+      <span style="color:${diff>=0?'var(--ok)':'var(--warn)'}">${diff>=0?'+':''}${C}${Math.abs(diff).toFixed(0)}</span>
+    </div>`;
+  });
+
+  if(!prices[cfg.tickers[0]]){ out += '<p style="font-size:0.65rem;color:var(--warn);margin-top:8px">⚠ Set current prices first for accurate share counts.</p>'; }
+  el.innerHTML = out;
+}
+
+// ── Investment Projection ─────────────────────────────────────────────────────
+let projChart = null;
+function renderProjection(){
+  const monthly  = parseFloat(document.getElementById('projMonthly')?.value)||500;
+  const years    = parseFloat(document.getElementById('projYears')?.value)||20;
+  const rate     = parseFloat(document.getElementById('projReturn')?.value)||7;
+  const C        = cfg.currency;
+
+  // Current portfolio value as starting point
+  const { h } = calcHoldings(transactions, cfg.tickers);
+  const currentVal = cfg.tickers.reduce((s,t)=>s+(h[t]||0)*(prices[t]||0), 0);
+
+  const monthlyRate = rate / 100 / 12;
+  const months = years * 12;
+  const labels = [], valueData = [], contributionData = [];
+  let value = currentVal, totalContrib = currentVal;
+
+  for(let m = 0; m <= months; m++){
+    if(m % 12 === 0){
+      labels.push(new Date().getFullYear() + Math.floor(m/12));
+      valueData.push(parseFloat(value.toFixed(0)));
+      contributionData.push(parseFloat(totalContrib.toFixed(0)));
+    }
+    value = value * (1 + monthlyRate) + monthly;
+    totalContrib += monthly;
+  }
+
+  const finalValue = valueData[valueData.length-1];
+  const totalInvested = contributionData[contributionData.length-1];
+  const growth = finalValue - totalInvested;
+
+  // Stats
+  const statsEl = document.getElementById('projStats');
+  if(statsEl) statsEl.innerHTML = `
+    <div class="stat-box"><div class="stat-label">Projected Value (${years}yr)</div><div class="stat-value" style="color:var(--accent)">${C}${(finalValue/1000).toFixed(0)}k</div></div>
+    <div class="stat-box"><div class="stat-label">Total Invested</div><div class="stat-value">${C}${(totalInvested/1000).toFixed(0)}k</div></div>
+    <div class="stat-box"><div class="stat-label">Investment Growth</div><div class="stat-value" style="color:var(--ok)">${C}${(growth/1000).toFixed(0)}k</div></div>
+    <div class="stat-box"><div class="stat-label">Monthly Investment</div><div class="stat-value">${C}${monthly.toLocaleString()}</div></div>`;
+
+  // Chart
+  if(projChart) projChart.destroy();
+  const ctx = document.getElementById('projChart')?.getContext('2d');
+  if(!ctx) return;
+  projChart = new Chart(ctx, {
+    type:'line',
+    data:{
+      labels,
+      datasets:[
+        { label:'Projected Value', data:valueData, borderColor:'#c8f060', backgroundColor:'rgba(200,240,96,0.1)', fill:true, tension:0.3, pointRadius:3 },
+        { label:'Total Contributed', data:contributionData, borderColor:'#6b7280', borderDash:[4,4], fill:false, tension:0.3, pointRadius:0 },
+      ]
+    },
+    options:{
+      responsive:true,
+      interaction:{mode:'index',intersect:false},
+      plugins:{legend:{labels:{color:'#6b7280',font:{family:'DM Mono',size:10}}},
+        tooltip:{callbacks:{label:ctx=>` ${ctx.dataset.label}: ${C}${ctx.raw.toLocaleString()}`}}},
+      scales:{
+        x:{grid:{color:'#1a1d24'},ticks:{color:'#6b7280',font:{family:'DM Mono',size:10}}},
+        y:{grid:{color:'#1a1d24'},ticks:{color:'#6b7280',font:{family:'DM Mono',size:10},callback:v=>C+(v/1000).toFixed(0)+'k'}}
+      }
+    }
+  });
+}
+
+// ── Print / PDF Summary ───────────────────────────────────────────────────────
+function printSummary(){
+  const { h, cb, rg, fees } = calcHoldings(transactions, cfg.tickers);
+  const vals={}; let total=0;
+  cfg.tickers.forEach(t=>{vals[t]=(h[t]||0)*(prices[t]||0);total+=vals[t];});
+  const invested=Object.values(cb).reduce((a,b)=>a+b,0);
+  const totalGL=total-invested;
+  const C=cfg.currency;
+  const date=new Date().toLocaleDateString('en-IE',{year:'numeric',month:'long',day:'numeric'});
+
+  const el=document.getElementById('printSummary');
+  el.innerHTML=`
+    <div style="font-family:'DM Mono',monospace;padding:20px">
+      <h1 style="font-family:'Instrument Serif',serif;font-size:1.8rem;margin-bottom:4px">${cfg.portfolioName}</h1>
+      <p style="color:#666;font-size:0.8rem;margin-bottom:20px">Portfolio Summary — ${date}</p>
+      <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:24px">
+        <div style="border:1px solid #ccc;border-radius:6px;padding:12px">
+          <div style="font-size:0.65rem;color:#666;text-transform:uppercase;margin-bottom:4px">Total Value</div>
+          <div style="font-size:1.4rem">${C}${total.toFixed(2)}</div>
+        </div>
+        <div style="border:1px solid #ccc;border-radius:6px;padding:12px">
+          <div style="font-size:0.65rem;color:#666;text-transform:uppercase;margin-bottom:4px">Total Invested</div>
+          <div style="font-size:1.4rem">${C}${invested.toFixed(2)}</div>
+        </div>
+        <div style="border:1px solid #ccc;border-radius:6px;padding:12px">
+          <div style="font-size:0.65rem;color:#666;text-transform:uppercase;margin-bottom:4px">Unrealised G/L</div>
+          <div style="font-size:1.4rem;color:${totalGL>=0?'green':'red'}">${totalGL>=0?'+':''}${C}${totalGL.toFixed(2)} (${invested>0?((totalGL/invested)*100).toFixed(2):0}%)</div>
+        </div>
+      </div>
+      <table style="width:100%;border-collapse:collapse;font-size:0.8rem;margin-bottom:24px">
+        <thead><tr style="border-bottom:2px solid #333">
+          <th style="text-align:left;padding:8px 0">ETF</th>
+          <th style="text-align:right;padding:8px 0">Shares</th>
+          <th style="text-align:right;padding:8px 0">Price</th>
+          <th style="text-align:right;padding:8px 0">Value</th>
+          <th style="text-align:right;padding:8px 0">Cost Basis</th>
+          <th style="text-align:right;padding:8px 0">G/L</th>
+          <th style="text-align:right;padding:8px 0">Allocation</th>
+        </tr></thead>
+        <tbody>${cfg.tickers.map(t=>{
+          const g=vals[t]-cb[t];
+          return `<tr style="border-bottom:1px solid #eee">
+            <td style="padding:8px 0"><strong>${t}</strong> <span style="color:#666;font-size:0.75em">${cfg.etfNames[t]||''}</span></td>
+            <td style="text-align:right;padding:8px 0">${(h[t]||0).toFixed(3)}</td>
+            <td style="text-align:right;padding:8px 0">${C}${(prices[t]||0).toFixed(2)}</td>
+            <td style="text-align:right;padding:8px 0">${C}${vals[t].toFixed(2)}</td>
+            <td style="text-align:right;padding:8px 0">${C}${cb[t].toFixed(2)}</td>
+            <td style="text-align:right;padding:8px 0;color:${g>=0?'green':'red'}">${g>=0?'+':''}${C}${g.toFixed(2)}</td>
+            <td style="text-align:right;padding:8px 0">${total>0?(vals[t]/total*100).toFixed(1):0}%</td>
+          </tr>`;
+        }).join('')}</tbody>
+      </table>
+      <p style="font-size:0.7rem;color:#666">Total Fees Paid: ${C}${Object.values(fees).reduce((a,b)=>a+b,0).toFixed(2)} &nbsp;·&nbsp; Realised G/L: ${C}${Object.values(rg).reduce((a,b)=>a+b,0).toFixed(2)} &nbsp;·&nbsp; Generated: ${date}</p>
+    </div>`;
+  window.print();
+}
+
 // ── Mobile nav ────────────────────────────────────────────────────────────────
-const SECTIONS = ['overview','allocation','chart','transactions'];
+const SECTIONS = ['overview','allocation','chart','transactions','annual','rebalance','projection'];
 
 function showSection(id, btn) {
   // On desktop (>600px) all sections always visible — do nothing
@@ -1371,6 +1645,72 @@ tickPrices();
 startPriceInterval();
 </script>
 
+
+<!-- ── Annual Summary ───────────────────────────────────────────────────────── -->
+<div class="mobile-section active" id="sec-annual">
+<div class="feature-card">
+  <div class="feature-title">📅 Annual Summary</div>
+  <div id="annualSummaryContent"></div>
+</div>
+</div><!-- end sec-annual -->
+
+<!-- ── Rebalance Calculator ──────────────────────────────────────────────────── -->
+<div class="mobile-section active" id="sec-rebalance">
+<div class="feature-card">
+  <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
+    <div class="feature-title" style="margin:0">⚖️ Rebalance Calculator</div>
+  </div>
+  <div style="margin-bottom:14px">
+    <label style="font-size:0.6rem;color:var(--muted);text-transform:uppercase;letter-spacing:0.08em;display:block;margin-bottom:4px">
+      New cash to deploy (optional)
+    </label>
+    <div style="display:flex;gap:8px;align-items:center;max-width:260px">
+      <span id="rebalCurrencySymbol" style="color:var(--muted);font-size:0.85rem"></span>
+      <input type="number" id="rebalCash" placeholder="0.00" step="0.01" min="0"
+        style="background:var(--surface2);border:1px solid var(--border);color:var(--text);font-family:'DM Mono',monospace;font-size:0.75rem;padding:8px 10px;border-radius:4px;width:100%;outline:none"
+        oninput="renderRebalCalc()">
+    </div>
+    <p style="font-size:0.62rem;color:var(--muted);margin-top:6px">Enter an amount if you want to deploy new cash alongside the rebalance.</p>
+  </div>
+  <div id="rebalCalcContent"></div>
+</div>
+</div><!-- end sec-rebalance -->
+
+<!-- ── Projection / Simulator ────────────────────────────────────────────────── -->
+<div class="mobile-section active" id="sec-projection">
+<div class="feature-card">
+  <div class="feature-title">📈 Investment Projection</div>
+  <div class="proj-controls">
+    <div class="s-field">
+      <label>Monthly Investment</label>
+      <input type="number" id="projMonthly" value="500" min="0" step="50"
+        style="background:var(--surface2);border:1px solid var(--border);color:var(--text);font-family:'DM Mono',monospace;font-size:0.75rem;padding:8px 10px;border-radius:4px;width:100%;outline:none"
+        oninput="renderProjection()">
+    </div>
+    <div class="s-field">
+      <label>Years</label>
+      <input type="number" id="projYears" value="20" min="1" max="50" step="1"
+        style="background:var(--surface2);border:1px solid var(--border);color:var(--text);font-family:'DM Mono',monospace;font-size:0.75rem;padding:8px 10px;border-radius:4px;width:100%;outline:none"
+        oninput="renderProjection()">
+    </div>
+    <div class="s-field">
+      <label>Expected Annual Return (%)</label>
+      <input type="number" id="projReturn" value="7" min="0" max="30" step="0.5"
+        style="background:var(--surface2);border:1px solid var(--border);color:var(--text);font-family:'DM Mono',monospace;font-size:0.75rem;padding:8px 10px;border-radius:4px;width:100%;outline:none"
+        oninput="renderProjection()">
+    </div>
+  </div>
+  <div id="projStats" class="stat-grid" style="margin-bottom:16px"></div>
+  <canvas id="projChart" style="max-height:220px"></canvas>
+  <p style="font-size:0.62rem;color:var(--muted);margin-top:10px;line-height:1.6">
+    ⚠️ Projections are illustrative only and do not account for inflation, taxes, or variable returns. Past performance is not a guide to future results.
+  </p>
+</div>
+</div><!-- end sec-projection -->
+
+<!-- ── Print Summary (hidden, shown only on print) ──────────────────────────── -->
+<div id="printSummary"></div>
+
 <!-- Mobile bottom nav -->
 <nav id="mobileNav">
   <div class="nav-items">
@@ -1378,13 +1718,22 @@ startPriceInterval();
       <span class="nav-icon">📊</span>Overview
     </button>
     <button class="nav-item" onclick="showSection('allocation',this)">
-      <span class="nav-icon">⚖️</span>Allocation
+      <span class="nav-icon">⚖️</span>Alloc
     </button>
     <button class="nav-item" onclick="showSection('chart',this)">
       <span class="nav-icon">📈</span>Chart
     </button>
     <button class="nav-item" onclick="showSection('transactions',this)">
       <span class="nav-icon">📋</span>Trades
+    </button>
+    <button class="nav-item" onclick="showSection('annual',this)">
+      <span class="nav-icon">📅</span>Annual
+    </button>
+    <button class="nav-item" onclick="showSection('rebalance',this)">
+      <span class="nav-icon">⚖️</span>Rebal
+    </button>
+    <button class="nav-item" onclick="showSection('projection',this)">
+      <span class="nav-icon">🔮</span>Project
     </button>
   </div>
 </nav>
