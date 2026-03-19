@@ -387,7 +387,7 @@
           <label>Price Source</label>
           <select id="s-price-mode" onchange="onPriceModeChange()">
             <option value="manual">Manual — I enter prices</option>
-            <option value="fmp">Yahoo Finance (auto, 4× per day)</option>
+            <option value="fmp">Yahoo Finance (auto, once per day)</option>
             <option value="demo">Demo (simulated)</option>
           </select>
         </div>
@@ -402,7 +402,7 @@
     <div class="s-section" id="fmpSection" style="display:none">
       <div class="s-section-title">📡 Live Prices — Yahoo Finance</div>
       <div style="padding:10px;background:var(--surface2);border-radius:6px;font-size:0.65rem;color:var(--muted);line-height:1.9;margin-bottom:12px">
-        <strong style="color:var(--accent)">No API key needed.</strong> Prices refresh automatically 4× per day via Yahoo Finance.<br>
+        <strong style="color:var(--accent)">No API key needed.</strong> Prices refresh automatically once per day via Yahoo Finance. You can always hit ↻ Refresh to fetch manually.<br>
         Enter the Yahoo symbol for each security in the <strong style="color:var(--text)">Yahoo Symbol</strong> field in the Securities section above.<br>
         Find symbols at <strong style="color:var(--text)">finance.yahoo.com</strong> — e.g.
         <span style="color:var(--accent)">SPYL.DE</span> = XETRA &nbsp;·&nbsp;
@@ -931,8 +931,32 @@ function setPriceStatus(state, msg){
 
 function startPriceInterval(){
   if(priceInterval) clearInterval(priceInterval);
-  const ms = (cfg.priceMode === 'fmp') ? 21600000 : 30000; // 6 hours = 4x per day
-  priceInterval = setInterval(tickPrices, ms);
+  if(cfg.priceMode !== 'fmp') {
+    // Demo/manual modes — short interval is fine, no API calls
+    priceInterval = setInterval(tickPrices, 30000);
+    return;
+  }
+  // For Yahoo Finance: only auto-refresh once per day
+  // Check when prices were last fetched
+  const lastFetch = parseInt(localStorage.getItem('etf_lastFetch')||'0');
+  const now = Date.now();
+  const oneDayMs = 86400000;
+  const timeSinceFetch = now - lastFetch;
+
+  if(timeSinceFetch >= oneDayMs) {
+    // Been more than 24h — fetch immediately on load
+    setTimeout(tickPrices, 1500);
+  } else {
+    // Fetched recently — schedule next fetch for when 24h is up
+    const remaining = oneDayMs - timeSinceFetch;
+    const nextIn = Math.max(remaining, 60000); // at least 1 min from now
+    const nextTime = new Date(now + nextIn).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'});
+    setPriceStatus('live_ok', 'Next fetch ~' + nextTime);
+    render();
+  }
+
+  // Set up recurring daily interval
+  priceInterval = setInterval(tickPrices, oneDayMs);
 }
 
 async function tickPrices(){
@@ -1228,8 +1252,7 @@ function applySettings(){
 
   saveCfg();
   closeSettings();
-  startPriceInterval();
-  tickPrices();
+  startPriceInterval(); // schedules next fetch, won't double-fire
 }
 
 function addSecurityRow(){
