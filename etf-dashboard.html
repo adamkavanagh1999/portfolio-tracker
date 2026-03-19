@@ -402,6 +402,19 @@
 
     <div class="s-section">
       <div class="s-section-title">Data Management</div>
+      <div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:12px">
+        <button class="btn-secondary" onclick="exportData()" style="display:flex;align-items:center;gap:6px">
+          ⬇ Export Data
+        </button>
+        <button class="btn-secondary" onclick="document.getElementById('importFileInput').click()" style="display:flex;align-items:center;gap:6px">
+          ⬆ Import Data
+        </button>
+        <input type="file" id="importFileInput" accept=".json" style="display:none" onchange="importData(event)">
+      </div>
+      <p style="font-size:0.65rem;color:var(--muted);margin-bottom:16px;line-height:1.6">
+        <strong style="color:var(--text)">Export</strong> saves all your transactions and settings to a JSON file on your device.<br>
+        <strong style="color:var(--text)">Import</strong> restores from a previously exported file — useful when changing your site URL or switching devices.
+      </p>
       <button class="btn-danger" onclick="clearAllData()">🗑 Clear All Transactions</button>
       <p style="font-size:0.65rem;color:var(--muted);margin-top:8px;">Permanently deletes all transaction history from this browser.</p>
     </div>
@@ -1269,6 +1282,52 @@ function clearAllData(){
   if(confirm('Delete ALL transaction history? This cannot be undone.')){
     transactions=[]; saveTx(); closeSettings(); render();
   }
+}
+
+function exportData(){
+  const data = {
+    version: 1,
+    exportedAt: new Date().toISOString(),
+    transactions,
+    cfg,
+    prices,
+  };
+  const blob = new Blob([JSON.stringify(data, null, 2)], {type:'application/json'});
+  const url  = URL.createObjectURL(blob);
+  const a    = document.createElement('a');
+  a.href     = url;
+  a.download = `portfolio-backup-${new Date().toISOString().split('T')[0]}.json`;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+function importData(event){
+  const file = event.target.files[0];
+  if(!file) return;
+  const reader = new FileReader();
+  reader.onload = e => {
+    try {
+      const data = JSON.parse(e.target.result);
+      if(!data.transactions || !data.cfg){
+        alert('Invalid backup file — please use a file exported from this dashboard.');
+        return;
+      }
+      if(!confirm(`This will replace all your current data with the backup from ${data.exportedAt?.split('T')[0] || 'unknown date'}. Are you sure?`)) return;
+      transactions = data.transactions;
+      saveTx();
+      Object.assign(cfg, data.cfg);
+      saveCfg();
+      if(data.prices) Object.assign(prices, data.prices);
+      closeSettings();
+      render();
+      alert('✓ Data imported successfully!');
+    } catch(err) {
+      alert('Failed to read file: ' + err.message);
+    }
+  };
+  reader.readAsText(file);
+  // Reset input so same file can be imported again if needed
+  event.target.value = '';
 }
 
 // ── Mobile nav ────────────────────────────────────────────────────────────────
