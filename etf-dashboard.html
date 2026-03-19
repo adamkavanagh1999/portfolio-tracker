@@ -1808,6 +1808,41 @@ window.addEventListener('resize', () => {
 });
 
 // ── Init ──────────────────────────────────────────────────────────────────────
+(function recoverOldData(){
+  // If current transactions are empty, check all known old localStorage keys
+  // that may have been used in previous versions of the dashboard
+  if(transactions.length === 0){
+    const oldTxKeys = ['etf_txs2','etf_txs3','etf_txs4','etf_txs5','etf_txs6'];
+    for(const key of oldTxKeys){
+      try {
+        const old = JSON.parse(localStorage.getItem(key)||'null');
+        if(old && Array.isArray(old) && old.length > 0){
+          // Found old transactions — restore them
+          transactions = old;
+          localStorage.setItem('etf_txs', JSON.stringify(transactions));
+          console.log('Recovered ' + old.length + ' transactions from ' + key);
+          break;
+        }
+      } catch(e){}
+    }
+  }
+  // Same for config
+  if(!localStorage.getItem('etf_cfg')){
+    const oldCfgKeys = ['etf_cfg2','etf_cfg3','etf_cfg4','etf_cfg5'];
+    for(const key of oldCfgKeys){
+      try {
+        const old = JSON.parse(localStorage.getItem(key)||'null');
+        if(old && old.tickers){
+          Object.assign(cfg, old);
+          localStorage.setItem('etf_cfg', JSON.stringify(cfg));
+          console.log('Recovered config from ' + key);
+          break;
+        }
+      } catch(e){}
+    }
+  }
+})();
+
 (function detectFileProtocol(){
   if(window.location.protocol === 'file:') {
     const banner = document.getElementById('fileBanner');
