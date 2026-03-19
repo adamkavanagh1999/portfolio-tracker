@@ -1499,30 +1499,66 @@ function renderRebalCalc(){
   const cashUsed = actions.reduce((s,a) => s + (a.diff>0 ? a.actualCost : 0), 0);
   const cashAfter = newCash - cashUsed;
 
+  // Post-trade new total (after whole share buys/sells)
+  const postTotal = grandTotal - cashAfter;
+
   let out = `
     <div class="stat-grid" style="margin-bottom:16px">
       <div class="stat-box"><div class="stat-label">Current Value</div><div class="stat-value">${C}${total.toFixed(0)}</div></div>
       <div class="stat-box"><div class="stat-label">New Cash</div><div class="stat-value">${C}${newCash.toFixed(0)}</div></div>
-      <div class="stat-box"><div class="stat-label">Cash After Trades</div><div class="stat-value" style="color:${cashAfter>=0?'var(--ok)':'var(--warn)'}">${C}${cashAfter.toFixed(2)}</div></div>
+      <div class="stat-box"><div class="stat-label">Total After Trades</div><div class="stat-value" style="color:var(--accent)">${C}${postTotal.toFixed(0)}</div></div>
+      <div class="stat-box"><div class="stat-label">Cash Remaining</div><div class="stat-value" style="color:${cashAfter>0?'var(--ok)':'var(--muted)'}">${C}${cashAfter.toFixed(2)}</div></div>
     </div>
-    <div style="font-size:0.6rem;color:var(--muted);text-transform:uppercase;letter-spacing:0.08em;margin-bottom:8px">Recommended Actions (whole shares only)</div>`;
+
+    <table style="width:100%;border-collapse:collapse;font-size:0.7rem;margin-bottom:12px">
+      <thead>
+        <tr style="border-bottom:1px solid var(--border)">
+          <th style="text-align:left;padding:6px 8px 6px 0;font-size:0.58rem;color:var(--muted);font-weight:400;text-transform:uppercase;letter-spacing:0.08em">ETF</th>
+          <th style="text-align:right;padding:6px 8px 6px 0;font-size:0.58rem;color:var(--muted);font-weight:400;text-transform:uppercase;letter-spacing:0.08em">Current %</th>
+          <th style="text-align:right;padding:6px 8px 6px 0;font-size:0.58rem;color:var(--muted);font-weight:400;text-transform:uppercase;letter-spacing:0.08em">Target %</th>
+          <th style="text-align:right;padding:6px 8px 6px 0;font-size:0.58rem;color:var(--muted);font-weight:400;text-transform:uppercase;letter-spacing:0.08em">After %</th>
+          <th style="text-align:left;padding:6px 8px 6px 8px;font-size:0.58rem;color:var(--muted);font-weight:400;text-transform:uppercase;letter-spacing:0.08em">Action</th>
+          <th style="text-align:right;padding:6px 0 6px 0;font-size:0.58rem;color:var(--muted);font-weight:400;text-transform:uppercase;letter-spacing:0.08em">Value Change</th>
+        </tr>
+      </thead>
+      <tbody>`;
 
   actions.forEach(({t, targetVal, currentVal, newVal, diff, shares, price, actualCost}) => {
-    const action = shares === 0 || Math.abs(diff) < price ? 'hold' : diff > 0 ? 'buy' : 'sell';
-    const cls = action==='buy'?'rebal-action-buy':action==='sell'?'rebal-action-sell':'rebal-action-hold';
-    const icon = action==='buy'?'▲':action==='sell'?'▼':'—';
+    const action     = shares === 0 || Math.abs(diff) < price ? 'hold' : diff > 0 ? 'buy' : 'sell';
+    const cls        = action==='buy'?'rebal-action-buy':action==='sell'?'rebal-action-sell':'rebal-action-hold';
+    const icon       = action==='buy'?'▲':action==='sell'?'▼':'—';
     const tradeValue = shares * price;
-    out += `<div class="rebal-row">
-      <span style="color:${cfg.colors[t]||'var(--accent)'}">●&nbsp;${t}</span>
-      <span class="${cls}">${icon} ${action.toUpperCase()}${action!=='hold'?` ${shares} share${shares!==1?'s':''} (${C}${tradeValue.toFixed(2)})`:''}</span>
-      <span style="color:var(--muted)">${C}${currentVal.toFixed(0)} → ${C}${newVal.toFixed(0)}</span>
-      <span style="color:${diff>=0?'var(--ok)':'var(--warn)'}">${action!=='hold'?(diff>=0?'+':'-')+C+tradeValue.toFixed(0):'—'}</span>
-    </div>`;
+    const tgt        = cfg.targets[t]||0;
+
+    // Allocation percentages
+    const currentPct = total > 0 ? (currentVal / total * 100) : 0;
+    const afterPct   = postTotal > 0 ? (newVal / postTotal * 100) : 0;
+    const driftColor = Math.abs(currentPct - tgt) > cfg.threshold ? 'var(--warn)' : 'var(--muted)';
+    const afterColor = Math.abs(afterPct - tgt) < 1.5 ? 'var(--ok)' : Math.abs(afterPct - tgt) < cfg.threshold ? 'var(--text)' : 'var(--warn)';
+
+    out += `<tr style="border-bottom:1px solid var(--border)">
+      <td style="padding:9px 8px 9px 0">
+        <span class="ticker-dot" style="background:${cfg.colors[t]||'var(--accent)'}"></span>
+        <strong>${t}</strong>
+      </td>
+      <td style="text-align:right;padding:9px 8px 9px 0;color:${driftColor}">${currentPct.toFixed(1)}%</td>
+      <td style="text-align:right;padding:9px 8px 9px 0;color:var(--muted)">${tgt}%</td>
+      <td style="text-align:right;padding:9px 8px 9px 0;color:${afterColor};font-weight:500">${afterPct.toFixed(1)}%</td>
+      <td style="padding:9px 8px 9px 8px">
+        <span class="${cls}">${icon} ${action.toUpperCase()}${action!=='hold'?` ${shares} share${shares!==1?'s':''}`:''}</span>
+        ${action!=='hold'?`<span style="color:var(--muted);font-size:0.65em"> (${C}${tradeValue.toFixed(2)})</span>`:''}
+      </td>
+      <td style="text-align:right;padding:9px 0 9px 0;color:${action==='hold'?'var(--muted)':diff>=0?'var(--ok)':'var(--warn)'}">
+        ${action!=='hold'?(diff>=0?'+':'-')+C+tradeValue.toFixed(0):'—'}
+      </td>
+    </tr>`;
   });
+
+  out += `</tbody></table>`;
 
   if(!prices[cfg.tickers[0]]){ out += '<p style="font-size:0.65rem;color:var(--warn);margin-top:8px">⚠ Set current prices first for accurate share counts.</p>'; }
   if(cashAfter > 0 && cashAfter < Math.min(...cfg.tickers.map(t=>prices[t]||Infinity))){
-    out += `<p style="font-size:0.65rem;color:var(--muted);margin-top:8px">ℹ ${C}${cashAfter.toFixed(2)} remaining — not enough to buy another full share of any ETF.</p>`;
+    out += `<p style="font-size:0.65rem;color:var(--muted);margin-top:8px;padding:8px 10px;background:var(--surface2);border-radius:4px">ℹ ${C}${cashAfter.toFixed(2)} remaining — not enough to buy a full share of any ETF.</p>`;
   }
   el.innerHTML = out;
 }
