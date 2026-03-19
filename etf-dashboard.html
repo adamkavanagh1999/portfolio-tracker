@@ -531,6 +531,11 @@
         <div><label>Fee (optional)</label><input type="number" id="txFee" placeholder="0.00" step="0.01" min="0"></div>
         <div><label>&nbsp;</label><button onclick="addTransaction()">Add</button></div>
       </div>
+      <div style="margin-top:8px">
+        <label>Notes (optional)</label>
+        <input type="text" id="txNotes" placeholder="e.g. Monthly DCA, Rebalance buy, Bonus investment…"
+          style="background:var(--surface2);border:1px solid var(--border);color:var(--text);font-family:'DM Mono',monospace;font-size:0.75rem;padding:8px 10px;border-radius:4px;width:100%;outline:none;margin-top:4px">
+      </div>
     </div>
     <div class="table-scroll"><div id="txTable"><div class="empty-state">No transactions yet.</div></div></div>
   </div>
@@ -771,11 +776,12 @@ function renderTxTable() {
   if(!transactions.length){el.innerHTML='<div class="empty-state">No transactions yet.</div>';return;}
   const sorted=[...transactions].sort((a,b)=>b.date.localeCompare(a.date));
   el.innerHTML=`<table><thead><tr>
-    <th>Date</th><th>Ticker</th><th>Type</th><th>Shares</th><th>Price</th><th>Total</th><th>Fee</th><th></th>
+    <th>Date</th><th>Ticker</th><th>Type</th><th>Shares</th><th>Price</th><th>Total</th><th>Fee</th><th>Notes</th><th></th>
   </tr></thead><tbody>${sorted.map(tx=>{
     const oi=transactions.indexOf(tx), c=tx.type==='buy'?'positive':'negative';
     const col=cfg.colors[tx.ticker]||'#666';
     const fee=tx.fee||0;
+    const notes=tx.notes||'';
     return `<tr>
       <td>${tx.date}</td>
       <td><span class="ticker-dot" style="background:${col}"></span>${tx.ticker}</td>
@@ -784,6 +790,7 @@ function renderTxTable() {
       <td>${cfg.currency}${tx.price.toFixed(2)}</td>
       <td>${cfg.currency}${(tx.shares*tx.price).toFixed(2)}</td>
       <td class="${fee>0?'negative':''}">${fee>0?'-'+cfg.currency+fee.toFixed(2):'—'}</td>
+      <td style="color:var(--muted);font-size:0.65rem;max-width:140px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${notes}">${notes||'—'}</td>
       <td><span style="cursor:pointer;color:var(--muted);font-size:0.7rem" onclick="deleteTx(${oi})">✕</span></td>
     </tr>`;
   }).join('')}</tbody></table>`;
@@ -1065,12 +1072,14 @@ function addTransaction(){
   const shares=parseFloat(document.getElementById('txShares').value);
   const price=parseFloat(document.getElementById('txPrice').value);
   const fee=parseFloat(document.getElementById('txFee').value)||0;
+  const notes=document.getElementById('txNotes').value.trim();
   if(!date||isNaN(shares)||isNaN(price)||!shares||!price){alert('Please fill in all fields.');return;}
-  transactions.push({date,ticker,type,shares,price,fee});
+  transactions.push({date,ticker,type,shares,price,fee,notes});
   saveTx();
   document.getElementById('txShares').value='';
   document.getElementById('txPrice').value='';
   document.getElementById('txFee').value='';
+  document.getElementById('txNotes').value='';
   render();
 }
 
@@ -1454,31 +1463,44 @@ function renderRebalCalc(){
     const currentVal = vals[t];
     const diff       = targetVal - currentVal;
     const price      = prices[t]||0;
-    const shares     = price > 0 ? Math.abs(diff) / price : 0;
-    return { t, targetVal, currentVal, diff, shares, price };
+    // Round to whole shares — floor for buys (don't overshoot), ceil for sells
+    const rawShares  = price > 0 ? Math.abs(diff) / price : 0;
+    const shares     = diff > 0 ? Math.floor(rawShares) : Math.ceil(rawShares);
+    // Recalculate actual value change based on whole shares
+    const actualCost = shares * price * (diff > 0 ? 1 : -1);
+    const newVal     = currentVal + actualCost;
+    return { t, targetVal, currentVal, newVal, diff, shares, price, actualCost };
   });
+
+  // Show residual cash after whole-share trades
+  const cashUsed = actions.reduce((s,a) => s + (a.diff>0 ? a.actualCost : 0), 0);
+  const cashAfter = newCash - cashUsed;
 
   let out = `
     <div class="stat-grid" style="margin-bottom:16px">
       <div class="stat-box"><div class="stat-label">Current Value</div><div class="stat-value">${C}${total.toFixed(0)}</div></div>
       <div class="stat-box"><div class="stat-label">New Cash</div><div class="stat-value">${C}${newCash.toFixed(0)}</div></div>
-      <div class="stat-box"><div class="stat-label">Total to Allocate</div><div class="stat-value" style="color:var(--accent)">${C}${grandTotal.toFixed(0)}</div></div>
+      <div class="stat-box"><div class="stat-label">Cash After Trades</div><div class="stat-value" style="color:${cashAfter>=0?'var(--ok)':'var(--warn)'}">${C}${cashAfter.toFixed(2)}</div></div>
     </div>
-    <div style="font-size:0.6rem;color:var(--muted);text-transform:uppercase;letter-spacing:0.08em;margin-bottom:8px">Recommended Actions</div>`;
+    <div style="font-size:0.6rem;color:var(--muted);text-transform:uppercase;letter-spacing:0.08em;margin-bottom:8px">Recommended Actions (whole shares only)</div>`;
 
-  actions.forEach(({t, targetVal, currentVal, diff, shares, price}) => {
-    const action = Math.abs(diff) < 1 ? 'hold' : diff > 0 ? 'buy' : 'sell';
+  actions.forEach(({t, targetVal, currentVal, newVal, diff, shares, price, actualCost}) => {
+    const action = shares === 0 || Math.abs(diff) < price ? 'hold' : diff > 0 ? 'buy' : 'sell';
     const cls = action==='buy'?'rebal-action-buy':action==='sell'?'rebal-action-sell':'rebal-action-hold';
     const icon = action==='buy'?'▲':action==='sell'?'▼':'—';
+    const tradeValue = shares * price;
     out += `<div class="rebal-row">
       <span style="color:${cfg.colors[t]||'var(--accent)'}">●&nbsp;${t}</span>
-      <span class="${cls}">${icon} ${action.toUpperCase()}${action!=='hold'?' '+shares.toFixed(3)+' shares':''}</span>
-      <span style="color:var(--muted)">${C}${currentVal.toFixed(0)} → ${C}${targetVal.toFixed(0)}</span>
-      <span style="color:${diff>=0?'var(--ok)':'var(--warn)'}">${diff>=0?'+':''}${C}${Math.abs(diff).toFixed(0)}</span>
+      <span class="${cls}">${icon} ${action.toUpperCase()}${action!=='hold'?` ${shares} share${shares!==1?'s':''} (${C}${tradeValue.toFixed(2)})`:''}</span>
+      <span style="color:var(--muted)">${C}${currentVal.toFixed(0)} → ${C}${newVal.toFixed(0)}</span>
+      <span style="color:${diff>=0?'var(--ok)':'var(--warn)'}">${action!=='hold'?(diff>=0?'+':'-')+C+tradeValue.toFixed(0):'—'}</span>
     </div>`;
   });
 
   if(!prices[cfg.tickers[0]]){ out += '<p style="font-size:0.65rem;color:var(--warn);margin-top:8px">⚠ Set current prices first for accurate share counts.</p>'; }
+  if(cashAfter > 0 && cashAfter < Math.min(...cfg.tickers.map(t=>prices[t]||Infinity))){
+    out += `<p style="font-size:0.65rem;color:var(--muted);margin-top:8px">ℹ ${C}${cashAfter.toFixed(2)} remaining — not enough to buy another full share of any ETF.</p>`;
+  }
   el.innerHTML = out;
 }
 
