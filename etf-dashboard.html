@@ -1007,32 +1007,35 @@ function setPriceStatus(state, msg){
 
 function startPriceInterval(){
   if(priceInterval) clearInterval(priceInterval);
+
   if(cfg.priceMode !== 'fmp') {
-    // Demo/manual modes — short interval is fine, no API calls
-    priceInterval = setInterval(tickPrices, 30000);
+    // Demo/manual: no API calls involved, render immediately
+    tickPrices();
     return;
   }
-  // For Yahoo Finance: only auto-refresh once per day
-  // Check when prices were last fetched
-  const lastFetch = parseInt(localStorage.getItem('etf_lastFetch')||'0');
-  const now = Date.now();
-  const oneDayMs = 86400000;
-  const timeSinceFetch = now - lastFetch;
 
-  if(timeSinceFetch >= oneDayMs) {
-    // Been more than 24h — fetch immediately on load
-    setTimeout(tickPrices, 1500);
+  // Yahoo Finance mode — smart scheduling to minimise function invocations
+  const lastFetch   = parseInt(localStorage.getItem('etf_lastFetch')||'0');
+  const now         = Date.now();
+  const oneDayMs    = 86400000;
+  const timeSince   = now - lastFetch;
+
+  if(lastFetch === 0 || timeSince >= oneDayMs) {
+    // Never fetched, or been over 24h — fetch once after a short delay
+    // (delay avoids firing during page load before DOM is ready)
+    setTimeout(tickPrices, 2000);
   } else {
-    // Fetched recently — schedule next fetch for when 24h is up
-    const remaining = oneDayMs - timeSinceFetch;
-    const nextIn = Math.max(remaining, 60000); // at least 1 min from now
-    const nextTime = new Date(now + nextIn).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'});
-    setPriceStatus('live_ok', 'Next fetch ~' + nextTime);
+    // Fetched recently — show cached status, schedule next fetch
+    const remaining = oneDayMs - timeSince;
+    const nextTime  = new Date(now + remaining).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'});
+    setPriceStatus('live_ok', 'Cached · next ~' + nextTime);
     render();
-  }
 
-  // Set up recurring daily interval
-  priceInterval = setInterval(tickPrices, oneDayMs);
+    // Schedule the next real fetch
+    setTimeout(tickPrices, remaining);
+  }
+  // No recurring setInterval — each fetch schedules the next one via the timeout above
+  // This prevents drift and double-firing after tab reopen
 }
 
 async function tickPrices(){
@@ -1079,6 +1082,7 @@ async function fetchFMP(){
     }
 
     // data.prices = { "SPYL.DE": 63.41, "MEUD.AS": 42.10, ... }
+    // data.cached = true if the server returned cached prices (no Yahoo call made)
     let gotAny = false;
     cfg.tickers.forEach(t => {
       const sym = cfg.fmpSymbols?.[t] || t;
@@ -1856,7 +1860,7 @@ window.addEventListener('resize', () => {
     }
   }
 })();
-tickPrices();
+// Only startPriceInterval() — it handles the initial fetch smartly based on last fetch time
 startPriceInterval();
 </script>
 
